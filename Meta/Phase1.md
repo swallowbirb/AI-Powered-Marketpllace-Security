@@ -112,8 +112,69 @@ Use this checklist to verify that all parts of Phase 1 are fully integrated and 
 - [x] **Mongoose User Schema:** User records can be saved and retrieved with all fields (including role).
 - [x] **Backend Authentication:** Routes require valid Clerk tokens; unauthenticated calls are rejected with 401 Unauthorized.
 - [x] **Clerk Webhooks (Registration):** `user.created` webhook accurately creates DB instances, eliminating desync bugs.
-- [ ] **User Role Operations:** Users can select their role during sign-up, and default Admins can be seeded.
-- [ ] **Role Authorization Middleware:** Users are restricted from endpoints that do not match their assigned role (e.g. 403 Forbidden).
+
 - [x] **Frontend Environment:** React application starts up and renders without console errors.
 - [x] **Frontend Authentication:** Clerk SignUp/SignIn flows work and authenticate the user.
 - [x] **Authenticated API Calls:** Frontend successfully calls protected backend API endpoints using the Clerk JWT token.
+
+
+# Implemented in 1.5:
+- [x] **User Role Operations:** Users can select their role during sign-up
+- [x] **Role Authorization Middleware:** Users are restricted from endpoints that do not match their assigned role (e.g. 403 Forbidden).
+
+# Current Architecture & Flow (Phase 1 & 1.5)
+
+```mermaid
+flowchart TD
+    %% User
+    User((User))
+
+    %% Frontend Components
+    subgraph Frontend [React Frontend]
+        App[App.jsx & RoleGuard]
+        Context[CustomUserContext]
+        Pages[Public Pages]
+        RoleSel[RoleSelectionPage]
+    end
+
+    %% Clerk Auth
+    subgraph Clerk [Clerk Auth Service]
+        ClerkUI[Clerk Authentication UI]
+        Webhooks[Clerk Webhook Events]
+    end
+
+    %% Backend API
+    subgraph Backend [Express Backend]
+        AuthMid[Auth & Role Middleware]
+        UserR[User Routes: /api/users]
+        WebhookC[Webhook Controller]
+    end
+
+    %% Database
+    subgraph Database [MongoDB]
+        UserDB[(Users Collection)]
+    end
+
+    %% Interactions
+    User -->|Visits Site| Pages
+    Pages -->|Initiates Login/Signup| ClerkUI
+    ClerkUI -->|Returns JWT| App
+    App -->|Mounts Context| Context
+    
+    %% Webhook sync
+    ClerkUI -.->|Fires async event| Webhooks
+    Webhooks -->|POST /webhooks/clerk| WebhookC
+    WebhookC -->|Upsert User| UserDB
+
+    %% Frontend to Backend User Sync & Role flow
+    Context -->|GET /api/users/me| UserR
+    UserR -->|Verifies Token| AuthMid
+    AuthMid -->|Reads User Role| UserDB
+    
+    %% Role Guard Logic
+    Context -->|Provides state: role=pending| App
+    App -->|Redirects| RoleSel
+    RoleSel -->|User Chooses Role| RoleSel
+    RoleSel -->|PATCH /api/users/role| UserR
+    UserR -->|Updates Role| UserDB
+```

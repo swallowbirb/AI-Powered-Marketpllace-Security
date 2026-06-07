@@ -44,7 +44,35 @@ const getMe = async (req, res, next) => {
   }
 };
 
+const updateRole = async (req, res, next) => {
+  try {
+    const { role } = req.body;
+    
+    if (!['buyer', 'seller', 'admin'].includes(role)) {
+      return res.status(400).json({ success: false, message: 'Invalid role' });
+    }
+
+    const user = req.user;
+    
+    // Using user model to update role
+    const User = require('./user.model');
+    const updatedUser = await User.findByIdAndUpdate(
+      user._id,
+      { role },
+      { new: true }
+    ).lean();
+
+    res.status(200).json({
+      success: true,
+      data: updatedUser,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   syncUser,
   getMe,
+  updateRole,
 };

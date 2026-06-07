@@ -65,6 +65,10 @@ UI should react to the user's role, hiding and showing elements accordingly.
 
 Use this checklist to verify that all parts of Phase 1.5 and Phase 2 are thoroughly functional together:
 
-- [ ] **Role Assignment:** Users have correct persistent roles applied upon creation.
-- [ ] **Middleware Enforcement:** Protected routes enforce role-based access control correctly.
-- [ ] **Frontend Role Awareness:** The frontend UI correctly reflects the user's role by showing or hiding elements as appropriate.
+- [x] **Role Assignment:** Users have correct persistent roles applied upon creation.
+- [x] **Middleware Enforcement:** Protected routes enforce role-based access control correctly.
+- [x] **Frontend Role Awareness:** The frontend UI correctly reflects the user's role by showing or hiding elements as appropriate.
+
+
+# TODO:
+- Remove in between loading screens. Opt for smoother experience.

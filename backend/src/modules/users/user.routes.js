@@ -16,4 +16,7 @@ router.get('/seller-data', requireAuth, attachUser, requireRole(['seller', 'admi
   res.json({ success: true, data: 'Seller specific data' });
 });
 
+// Update user role
+router.patch('/role', requireAuth, attachUser, userController.updateRole);
+
 module.exports = router;
