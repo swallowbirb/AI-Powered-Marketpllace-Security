@@ -1,40 +1,14 @@
 import { useAuth, useUser } from "@clerk/clerk-react";
 import { Link } from "react-router-dom";
-import { useEffect } from "react";
 import { Moon, Sun } from "lucide-react";
-import api from "../services/api";
 import { useDarkMode } from "../hooks/useDarkMode";
+import { useCustomUser } from "../context/CustomUserContext";
 
 const HomePage = () => {
   const { isSignedIn, isLoaded, signOut } = useAuth();
   const { user } = useUser();
   const { isDark, toggleDarkMode } = useDarkMode();
-
-  const { getToken } = useAuth();
-
-  // Sync user with backend on login
-  useEffect(() => {
-    if (isSignedIn && user) {
-      const syncUser = async () => {
-        try {
-          const token = await getToken();
-          //TODO: REMOVE TOKEN LOGGING!
-          console.log("MY TOKEN:", token);
-          await api.post(
-            "/users/sync",
-            {},
-            {
-              headers: { Authorization: `Bearer ${token}` },
-            },
-          );
-          console.log("User synced with backend");
-        } catch (error) {
-          console.error("Failed to sync user:", error);
-        }
-      };
-      syncUser();
-    }
-  }, [isSignedIn, user, getToken]);
+  const { role } = useCustomUser();
 
   if (!isLoaded) {
     return (
@@ -73,12 +47,14 @@ const HomePage = () => {
             !
           </p>
           <div className="flex gap-4 mt-4">
-            <Link
-              to="/dashboard"
-              className="px-6 py-2 bg-primary text-primary-foreground rounded-md font-medium hover:opacity-90 transition-opacity"
-            >
-              Go to Dashboard
-            </Link>
+            {(role === "seller" || role === "admin") && (
+              <Link
+                to="/dashboard"
+                className="px-6 py-2 bg-primary text-primary-foreground rounded-md font-medium hover:opacity-90 transition-opacity"
+              >
+                Go to Dashboard
+              </Link>
+            )}
             <button
               onClick={() => signOut()}
               className="px-6 py-2 bg-secondary text-secondary-foreground rounded-md font-medium hover:opacity-90 transition-opacity"

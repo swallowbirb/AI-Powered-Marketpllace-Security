@@ -63,7 +63,7 @@ const handleClerkWebhook = async (req, res) => {
           : "";
 
       // Role selection implementation logic: reading from public_metadata or unsafe_metadata
-      const role = public_metadata?.role || unsafe_metadata?.role || "buyer";
+      const role = public_metadata?.role || unsafe_metadata?.role || "pending";
 
       const userData = {
         clerkId,
