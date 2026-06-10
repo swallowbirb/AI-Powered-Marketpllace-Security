@@ -1,28 +1,39 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { useAuth } from "@clerk/clerk-react";
+import { setAuthToken } from "../services/api";
 
 const CustomUserContext = createContext();
 
 export function CustomUserProvider({ children }) {
-  const { getToken, isSignedIn, isLoaded } = useAuth();
+  const { getToken, isSignedIn: clerkIsSignedIn, isLoaded: clerkIsLoaded } = useAuth();
   const [role, setRole] = useState(null);
   const [mongoUser, setMongoUser] = useState(null);
   const [isLoadingRole, setIsLoadingRole] = useState(true);
 
+  const isDev = process.env.NODE_ENV !== "production" || import.meta.env?.DEV;
+  const [mockClerkId, setMockClerkId] = useState(isDev ? localStorage.getItem("mock_clerk_id") : null);
+
+  const isSignedIn = !!mockClerkId || clerkIsSignedIn;
+  const isLoaded = clerkIsLoaded;
+
   const fetchMongoUser = async () => {
     setIsLoadingRole(true);
-    if (!isSignedIn) {
+    const activeId = isDev ? localStorage.getItem("mock_clerk_id") : null;
+
+    if (!clerkIsSignedIn && !activeId) {
       setRole(null);
       setMongoUser(null);
+      setAuthToken(null);
       setIsLoadingRole(false);
       return;
     }
 
     try {
-      const token = await getToken();
+      const token = activeId ? activeId : await getToken();
+      setAuthToken(token);
       
       // First, try to sync user to make sure they exist in Mongo
-      await fetch("http://localhost:5000/api/users/sync", {
+      await fetch(`${import.meta.env.VITE_API_URL}/users/sync`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -31,7 +42,7 @@ export function CustomUserProvider({ children }) {
       });
 
       // Then get the user profile
-      const response = await fetch("http://localhost:5000/api/users/me", {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/users/me`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -50,15 +61,15 @@ export function CustomUserProvider({ children }) {
   };
 
   useEffect(() => {
-    if (isLoaded) {
+    if (clerkIsLoaded) {
       fetchMongoUser();
     }
-  }, [isLoaded, isSignedIn]);
+  }, [clerkIsLoaded, clerkIsSignedIn, mockClerkId]);
 
   const updateRole = async (newRole) => {
     try {
-      const token = await getToken();
-      const response = await fetch("http://localhost:5000/api/users/role", {
+      const token = mockClerkId ? mockClerkId : await getToken();
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/users/role`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -81,7 +92,7 @@ export function CustomUserProvider({ children }) {
   };
 
   return (
-    <CustomUserContext.Provider value={{ role, mongoUser, updateRole, isLoadingRole }}>
+    <CustomUserContext.Provider value={{ role, mongoUser, updateRole, isLoadingRole, isSignedIn, isLoaded }}>
       {children}
     </CustomUserContext.Provider>
   );
@@ -89,4 +100,16 @@ export function CustomUserProvider({ children }) {
 
 export function useCustomUser() {
   return useContext(CustomUserContext);
+}
+
+export function CustomSignedIn({ children }) {
+  const { isSignedIn, isLoadingRole } = useCustomUser();
+  if (isLoadingRole) return null;
+  return isSignedIn ? <>{children}</> : null;
+}
+
+export function CustomSignedOut({ children }) {
+  const { isSignedIn, isLoadingRole } = useCustomUser();
+  if (isLoadingRole) return null;
+  return !isSignedIn ? <>{children}</> : null;
 }

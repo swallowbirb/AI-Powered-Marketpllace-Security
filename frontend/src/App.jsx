@@ -1,25 +1,77 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { SignedIn, SignedOut, useAuth } from '@clerk/clerk-react';
 import { ThemeProvider } from './lib/ThemeProvider';
-import { CustomUserProvider, useCustomUser } from './context/CustomUserContext';
+import { CustomUserProvider, useCustomUser, CustomSignedIn, CustomSignedOut } from './context/CustomUserContext';
+import DevTools from './components/shared/DevTools';
+import { motion } from 'framer-motion';
+import { Ban } from 'lucide-react';
+import MarketplaceLayout from './layouts/MarketplaceLayout';
 
 // Pages
 import HomePage from './pages/HomePage';
 import SignInPage from './pages/SignInPage';
 import SignUpPage from './pages/SignUpPage';
 import RoleSelectionPage from './pages/RoleSelectionPage';
+import SellerDashboard from './pages/SellerDashboard';
+import NewProductPage from './pages/NewProductPage';
+import EditProductPage from './pages/EditProductPage';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import SearchResultsPage from './pages/SearchResultsPage';
+import ProductDetailPage from './pages/ProductDetailPage';
+import StorePage from './pages/StorePage';
+import BrandDashboard from './pages/brand/BrandDashboard';
+import NewOfferPage from './pages/NewOfferPage';
+import CatalogEntryDetailPage from './pages/CatalogEntryDetailPage';
+import BuyerOrdersPage from './pages/BuyerOrdersPage';
 
-// A wrapper to ensure users have selected a role
-function RoleGuard({ children }) {
-  const { isLoaded, isSignedIn } = useAuth();
+// ─── Role Guards ────────────────────────────────────────────────────────────
+
+function getDashboardRedirectPath(role) {
+  if (role === 'admin') return '/admin/dashboard';
+  if (role === 'seller') return '/seller/dashboard';
+  if (role === 'brand') return '/brand/dashboard';
+  return '/';
+}
+
+function SellerGuard({ children }) {
+  const { role, mongoUser, isLoadingRole } = useCustomUser();
+  if (isLoadingRole) return <LoadingScreen />;
+  if (role !== 'seller') {
+    return <Navigate to={getDashboardRedirectPath(role)} replace />;
+  }
+  if (mongoUser?.banned) return <BannedScreen />;
+  return children;
+}
+
+function AdminGuard({ children }) {
   const { role, isLoadingRole } = useCustomUser();
+  if (isLoadingRole) return <LoadingScreen />;
+  if (role !== 'admin') {
+    return <Navigate to={getDashboardRedirectPath(role)} replace />;
+  }
+  return children;
+}
+
+function BrandGuard({ children }) {
+  const { role, isLoadingRole } = useCustomUser();
+  if (isLoadingRole) return <LoadingScreen />;
+  if (role !== 'brand') {
+    return <Navigate to={getDashboardRedirectPath(role)} replace />;
+  }
+  return children;
+}
+
+function DashboardRedirect() {
+  const { role, isLoadingRole } = useCustomUser();
+  if (isLoadingRole) return <LoadingScreen />;
+  return <Navigate to={getDashboardRedirectPath(role)} replace />;
+}
+
+function RoleGuard({ children }) {
+  const { isSignedIn, isLoaded, role, isLoadingRole } = useCustomUser();
   const location = useLocation();
 
-  if (!isLoaded || isLoadingRole) {
-    return <div className="flex h-screen items-center justify-center">Loading...</div>;
-  }
+  if (!isLoaded || isLoadingRole) return <LoadingScreen />;
 
-  // If signed in and role is pending, force them to role selection unless they are already there
   if (isSignedIn && role === 'pending' && location.pathname !== '/role-selection') {
     return <Navigate to="/role-selection" replace />;
   }
@@ -27,64 +79,112 @@ function RoleGuard({ children }) {
   return children;
 }
 
+// ─── Utility Screens ────────────────────────────────────────────────────────
+
+function LoadingScreen() {
+  return (
+    <div className="flex h-screen items-center justify-center bg-black text-white">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-4 border-zinc-700 border-t-white rounded-full animate-spin" />
+        <p className="text-sm text-zinc-500">Loading...</p>
+      </div>
+    </div>
+  );
+}
+
+function BannedScreen() {
+  return (
+    <div className="min-h-screen bg-black text-white flex items-center justify-center p-8 font-sans">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-3xl p-8 text-center space-y-6 shadow-2xl"
+      >
+        <div className="w-16 h-16 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center justify-center mx-auto text-red-500">
+          <Ban className="w-8 h-8" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold">Account Banned</h1>
+          <p className="text-sm text-zinc-400 mt-2 leading-relaxed">
+            Your seller account has been permanently banned due to security or policy violations.
+          </p>
+        </div>
+        <a
+          href="mailto:support@marketplace.security"
+          className="inline-flex items-center justify-center w-full px-5 py-2.5 rounded-xl text-sm font-medium bg-white text-black hover:bg-zinc-200 transition-colors"
+        >
+          Contact Support
+        </a>
+      </motion.div>
+    </div>
+  );
+}
+
+// ─── App ────────────────────────────────────────────────────────────────────
+
 function App() {
   return (
     <ThemeProvider>
       <CustomUserProvider>
         <BrowserRouter>
-        <div className="min-h-screen flex flex-col bg-background font-sans antialiased text-foreground">
-        {/* Navigation could go here */}
-        <main className="flex-1 flex flex-col">
           <RoleGuard>
             <Routes>
-              <Route path="/" element={<HomePage />} />
-              
-              <Route 
-                path="/sign-in/*" 
-                element={
-                  <SignedOut>
-                    <SignInPage />
-                  </SignedOut>
-                } 
-              />
-              
-              <Route 
-                path="/sign-up/*" 
-                element={
-                  <SignedOut>
-                    <SignUpPage />
-                  </SignedOut>
-                } 
+              {/* Public marketplace routes (with Navbar + Footer) */}
+              <Route path="/" element={<MarketplaceLayout><HomePage /></MarketplaceLayout>} />
+              <Route path="/search" element={<MarketplaceLayout><SearchResultsPage /></MarketplaceLayout>} />
+              <Route path="/products/:id" element={<MarketplaceLayout><ProductDetailPage /></MarketplaceLayout>} />
+              <Route path="/p/:entryId" element={<MarketplaceLayout><CatalogEntryDetailPage /></MarketplaceLayout>} />
+              <Route path="/seller/:id/store" element={<MarketplaceLayout><StorePage /></MarketplaceLayout>} />
+
+              {/* Auth routes */}
+              <Route path="/sign-in/*" element={<CustomSignedOut><SignInPage /></CustomSignedOut>} />
+              <Route path="/sign-up/*" element={<CustomSignedOut><SignUpPage /></CustomSignedOut>} />
+
+              {/* Role selection */}
+              <Route path="/role-selection" element={<CustomSignedIn><RoleSelectionPage /></CustomSignedIn>} />
+
+              {/* Dashboard redirect */}
+              <Route path="/dashboard" element={<CustomSignedIn><DashboardRedirect /></CustomSignedIn>} />
+
+              {/* Buyer routes */}
+              <Route
+                path="/orders"
+                element={<CustomSignedIn><MarketplaceLayout><BuyerOrdersPage /></MarketplaceLayout></CustomSignedIn>}
               />
 
-              <Route 
-                path="/role-selection" 
-                element={
-                  <SignedIn>
-                    <RoleSelectionPage />
-                  </SignedIn>
-                } 
+              {/* Seller routes */}
+              <Route
+                path="/seller/dashboard"
+                element={<CustomSignedIn><SellerGuard><SellerDashboard /></SellerGuard></CustomSignedIn>}
+              />
+              <Route
+                path="/seller/new-product"
+                element={<CustomSignedIn><SellerGuard><NewProductPage /></SellerGuard></CustomSignedIn>}
+              />
+              <Route
+                path="/seller/edit-product/:id"
+                element={<CustomSignedIn><SellerGuard><EditProductPage /></SellerGuard></CustomSignedIn>}
+              />
+              <Route
+                path="/seller/new-offer"
+                element={<CustomSignedIn><SellerGuard><NewOfferPage /></SellerGuard></CustomSignedIn>}
               />
 
-              {/* Protected Routes Example */}
-              <Route 
-                path="/dashboard" 
-                element={
-                  <>
-                    <SignedIn>
-                      <div className="p-8">Protected Dashboard Area, but you're allowed darlin</div>
-                    </SignedIn>
-                    <SignedOut>
-                      <Navigate to="/sign-in" />
-                    </SignedOut>
-                  </>
-                } 
+              {/* Brand routes */}
+              <Route
+                path="/brand/dashboard"
+                element={<CustomSignedIn><BrandGuard><BrandDashboard /></BrandGuard></CustomSignedIn>}
+              />
+
+              {/* Admin routes */}
+              <Route
+                path="/admin/dashboard"
+                element={<CustomSignedIn><AdminGuard><AdminDashboard /></AdminGuard></CustomSignedIn>}
               />
             </Routes>
           </RoleGuard>
-        </main>
-      </div>
-      </BrowserRouter>
+        </BrowserRouter>
+        <DevTools />
       </CustomUserProvider>
     </ThemeProvider>
   );

@@ -1,86 +1,101 @@
-import { useAuth, useUser } from "@clerk/clerk-react";
-import { Link } from "react-router-dom";
-import { Moon, Sun } from "lucide-react";
-import { useDarkMode } from "../hooks/useDarkMode";
-import { useCustomUser } from "../context/CustomUserContext";
+import { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { getPublishedProducts } from '../services/product.service';
+import ProductCard from '../components/shared/ProductCard';
+import CategoryCard from '../components/shared/CategoryCard';
+import { Search, Shield, TrendingUp, Star, ArrowRight, Zap } from 'lucide-react';
 
-const HomePage = () => {
-  const { isSignedIn, isLoaded, signOut } = useAuth();
-  const { user } = useUser();
-  const { isDark, toggleDarkMode } = useDarkMode();
-  const { role } = useCustomUser();
+const CATEGORIES = [
+  'Electronics', 'Clothing', 'Home & Garden', 'Sports',
+  'Toys', 'Books', 'Automotive', 'Health & Beauty',
+];
 
-  if (!isLoaded) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        Loading...
-      </div>
-    );
-  }
+
+
+export default function HomePage() {
+  const [products, setProducts] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const response = await getPublishedProducts();
+        if (response.success) setProducts(response.data);
+      } catch (err) {
+        console.error('Failed to fetch products:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchProducts();
+  }, []);
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center bg-background relative">
-      {/* Dark Mode Toggle */}
-      <button
-        onClick={toggleDarkMode}
-        className="absolute top-8 right-8 p-2 rounded-lg bg-secondary text-secondary-foreground hover:opacity-80 transition-opacity"
-        aria-label="Toggle dark mode"
-      >
-        {isDark ? <Sun size={24} /> : <Moon size={24} />}
-      </button>
+    <div className="min-h-screen bg-[#EAEDED]">
 
-      <h1 className="text-5xl font-bold mb-6 text-foreground tracking-tight">
-        AI Powered Marketplace
-      </h1>
-      <p className="text-xl text-muted-foreground max-w-2xl mb-12">
-        A secure, next-generation platform for buying and selling AI tools and
-        models.
-      </p>
 
-      {isSignedIn ? (
-        <div className="flex flex-col items-center gap-4 p-8 border border-border rounded-xl bg-card shadow-sm">
-          <p className="text-lg">
-            Welcome back,{" "}
-            <span className="font-semibold">
-              {user.firstName || user.emailAddresses[0].emailAddress}
-            </span>
-            !
-          </p>
-          <div className="flex gap-4 mt-4">
-            {(role === "seller" || role === "admin") && (
-              <Link
-                to="/dashboard"
-                className="px-6 py-2 bg-primary text-primary-foreground rounded-md font-medium hover:opacity-90 transition-opacity"
-              >
-                Go to Dashboard
-              </Link>
-            )}
-            <button
-              onClick={() => signOut()}
-              className="px-6 py-2 bg-secondary text-secondary-foreground rounded-md font-medium hover:opacity-90 transition-opacity"
-            >
-              Sign Out
-            </button>
+      {/* Trust/Security Badges */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-[1200px] mx-auto px-6 py-4 flex flex-wrap items-center justify-center gap-8">
+          {[
+            { icon: <Shield className="w-5 h-5 text-[#007600]" />, text: 'AI Fraud Detection' },
+            { icon: <Star className="w-5 h-5 text-[#FF9900]" />, text: 'Verified Reviews' },
+            { icon: <TrendingUp className="w-5 h-5 text-[#007185]" />, text: 'Risk Scoring' },
+            { icon: <Search className="w-5 h-5 text-[#C7511F]" />, text: 'Brand Protection' },
+          ].map(({ icon, text }) => (
+            <div key={text} className="flex items-center gap-2 text-sm text-gray-700 font-medium">
+              {icon} {text}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="max-w-[1200px] mx-auto px-6 py-8 space-y-10">
+
+
+        {/* Featured Products */}
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-900">
+              Featured Products
+              <span className="ml-2 text-sm font-normal text-gray-500">({products.length} items)</span>
+            </h2>
+            <Link to="/search" className="text-sm text-[#007185] hover:text-[#C7511F] flex items-center gap-1">
+              See all results <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
           </div>
-        </div>
-      ) : (
-        <div className="flex gap-4">
-          <Link
-            to="/sign-in"
-            className="px-8 py-3 bg-primary text-primary-foreground rounded-md font-medium text-lg hover:opacity-90 transition-opacity"
-          >
-            Sign In
-          </Link>
-          <Link
-            to="/sign-up"
-            className="px-8 py-3 bg-secondary text-secondary-foreground border border-border rounded-md font-medium text-lg hover:bg-muted transition-colors"
-          >
-            Sign Up
-          </Link>
-        </div>
-      )}
+
+          {isLoading ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {Array.from({ length: 10 }).map((_, i) => (
+                <div key={i} className="bg-white rounded-md h-64 animate-pulse" />
+              ))}
+            </div>
+          ) : products.length === 0 ? (
+            <div className="bg-white rounded-md p-16 text-center border border-gray-200">
+              <div className="text-5xl mb-4">🛍️</div>
+              <h3 className="text-lg font-bold text-gray-800 mb-2">No products yet</h3>
+              <p className="text-gray-500 mb-4">Be the first to list a product on the marketplace!</p>
+              <Link
+                to="/role-selection"
+                className="amz-btn-primary px-6 py-2 rounded text-sm inline-block"
+              >
+                Start Selling
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {products.slice(0, 20).map((product, i) => (
+                <ProductCard key={product._id} product={product} index={i} />
+              ))}
+            </div>
+          )}
+        </section>
+
+
+      </div>
     </div>
   );
-};
-
-export default HomePage;
+}

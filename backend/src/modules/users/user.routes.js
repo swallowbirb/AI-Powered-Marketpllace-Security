@@ -19,4 +19,7 @@ router.get('/seller-data', requireAuth, attachUser, requireRole(['seller', 'admi
 // Update user role
 router.patch('/role', requireAuth, attachUser, userController.updateRole);
 
+// Public store page for a seller
+router.get('/:id/store', userController.getStore);
+
 module.exports = router;

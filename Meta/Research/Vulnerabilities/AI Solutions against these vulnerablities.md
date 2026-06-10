@@ -1,0 +1,14 @@
+1. Deep Graph Neural Networks & NLP for Fake Reviews
+To combat the massive scale of AI-generated fake reviews and "brushing" scams, Amazon utilizes deep graph neural networks. Rather than simply analyzing the text of an isolated review, these networks map complex relationships, sign-in patterns, and behavioral anomalies across millions of accounts to uncover hidden review syndicates and coordinated bad actors. This structural analysis is paired with Natural Language Processing (NLP) techniques to flag unnatural grammar, sentiment anomalies, and indications of incentivized reviews.
+
+2. Anomaly Detection & ML Models for Refund Fraud
+To dismantle "Refund-as-a-Service" syndicates, Amazon's systems utilize machine learning algorithms to continuously monitor customer return behaviors and flag anomalies over time. These models process vast amounts of transactional, behavioral, and network data in real-time to detect suspicious patterns, such as sudden spikes in "empty box" claims or irregular geographic routing anomalies. Amazon has also packaged this expertise into "Amazon Fraud Detector," a machine-learning service built on 20 years of its own fraud data that evaluates high-volume production traffic to catch account takeovers and payment fraud.
+
+3. "Omniscan" for Physical Supply Chain Integrity
+To address physical counterfeiting and product safety—such as the commingled inventory problem—Amazon deployed an advanced machine learning system named Omniscan. Operating directly within Amazon's global fulfillment centers, Omniscan captures and analyzes six-sided physical images of products. The system uses computer vision to automatically verify the readability and language of essential product safety details before items are allowed to go live on the site, generating image sets for more than 12 million products.
+
+4. Predictive "Early Warning System" for IP Infringement
+To counter "Black Hat" listing hijackers, Amazon employs an AI early warning system that actively pulls in external signals from social media trends and other retailers to anticipate malicious activity. For example, this predictive AI successfully anticipated a counterfeit attack on a new viral product and proactively blocked the infringing listings a full eight days before the legitimate brand owner had even shared their intellectual property details with Amazon.
+
+5. Multimodal Large Language Models (MLLMs)
+To fight complex listing manipulation and false infringement claims, Amazon integrated MLLMs into its proactive controls. Instead of looking at listing data in isolation, these models evaluate product pages holistically by analyzing text attributes, logos, visual data, and pricing patterns simultaneously. This technology successfully blocks more than 99% of suspected infringing listings before brands even need to report them.  

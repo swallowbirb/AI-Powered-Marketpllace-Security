@@ -1,20 +1,43 @@
+const { clerkClient } = require('@clerk/clerk-sdk-node');
 const userService = require('./user.service');
 
 const syncUser = async (req, res, next) => {
   try {
-    const { id: clerkId, email_addresses, first_name, last_name, image_url } = req.auth.user;
-    
-    // Fallback if not using req.auth.user (if we get it from body instead)
-    // However, Clerk SDK normally populates req.auth.
-    // If it's a webhook or frontend passing data, we'll validate.
-    
-    const email = email_addresses && email_addresses.length > 0 ? email_addresses[0].email_address : req.body.email;
+    const clerkId = req.auth?.userId;
+    if (!clerkId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized: No Clerk user ID found' });
+    }
+
+    let email, firstName, lastName, avatarUrl, role;
+
+    if (process.env.NODE_ENV !== 'production' && clerkId.startsWith('mock_')) {
+      const parts = clerkId.split('_');
+      const identifier = parts[1] || 'buyer';
+      email = `${identifier}@mock.com`;
+      firstName = 'Mock';
+      lastName = identifier.charAt(0).toUpperCase() + identifier.slice(1);
+      avatarUrl = `https://api.dicebear.com/7.x/initials/svg?seed=${firstName} ${lastName}`;
+      if (['admin', 'seller', 'brand', 'buyer'].includes(identifier)) {
+        role = identifier;
+      }
+    } else {
+      // Fetch full user details from Clerk's SDK
+      const clerkUser = await clerkClient.users.getUser(clerkId);
+      email = clerkUser.emailAddresses && clerkUser.emailAddresses.length > 0 
+        ? clerkUser.emailAddresses[0].emailAddress 
+        : req.body.email;
+      firstName = clerkUser.firstName || req.body.firstName;
+      lastName = clerkUser.lastName || req.body.lastName;
+      avatarUrl = clerkUser.imageUrl || req.body.avatarUrl;
+    }
+
     const userData = {
-      clerkId: clerkId || req.body.clerkId,
-      email: email,
-      firstName: first_name || req.body.firstName,
-      lastName: last_name || req.body.lastName,
-      avatarUrl: image_url || req.body.avatarUrl,
+      clerkId,
+      email,
+      firstName,
+      lastName,
+      avatarUrl,
+      ...(role && { role }),
     };
 
     if (!userData.clerkId || !userData.email) {
@@ -48,7 +71,7 @@ const updateRole = async (req, res, next) => {
   try {
     const { role } = req.body;
     
-    if (!['buyer', 'seller', 'admin'].includes(role)) {
+    if (!['buyer', 'seller', 'brand', 'admin'].includes(role)) {
       return res.status(400).json({ success: false, message: 'Invalid role' });
     }
 
@@ -71,8 +94,41 @@ const updateRole = async (req, res, next) => {
   }
 };
 
+const getStore = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const User = require('./user.model');
+    const Product = require('../products/product.model');
+
+    const seller = await User.findById(id)
+      .select('firstName lastName storeName storeDescription avatarUrl profileImageUrl averageRating totalReviewsReceived reviewCount createdAt role')
+      .lean();
+
+    if (!seller || (seller.role !== 'seller' && seller.role !== 'admin')) {
+      return res.status(404).json({ success: false, message: 'Store not found' });
+    }
+
+    const products = await Product.find({
+      sellerId: id,
+      status: { $in: ['published', 'approved'] },
+      banned: false,
+      suspended: false,
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      data: { seller, products },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   syncUser,
   getMe,
   updateRole,
+  getStore,
 };

@@ -67,7 +67,8 @@ graph TD
     A --> D["Admin / Moderator"]
     B -->|Submit Listings| E["Product CRUD"]
     C -->|Write Reviews| F["Review System"]
-    D -->|Review Flagged Items| G["Admin Dashboard"]
+    D -->|
+    Review Flagged Items| G["Admin Dashboard"]
 ```
 
 | Role   | Capabilities                                               |

@@ -20,6 +20,11 @@ At the end of each subphase give verification checklist, if also list these same
 *   **How:** Build the backend API routes for product creation and retrieval. Once functional, develop the frontend seller dashboard to interface with these routes.
 *   **Verify:** Use Postman to create new product records and retrieve them from the database. Afterward, verify that the frontend UI correctly displays these products for the seller. At the end of each subphase give verification checklist, if also list these same verification steps at the end of the phase plan too (in the final verification list section), give verificattion checklist so I can test if all features implemented are working or not.
 
+### Phase 2.5: Admin Moderation Dashboard for Product Management
+*   **Goal:** Allow admins to view, filter, and manage product listings on the platform. Categorize the product listing and also seller listing categorized on a 'Risk Score' such as (High, Medium, Low). Admin can approve or reject a product listing. Risk Scores will later be evaluated by AI. Also completely update the new schema for product listing and seller. In product remove aiConfidence and aiReasoning, add productRS (product Ris Score) and for seller add sellerRS (seller Ris Score). Also in the both the schemas have booleans flags 'banned' and 'suspended' for both the product and seller. Admin can ban or suspend or unban or unsuspend them.
+*   **How:** Build the backend API routes for product retrieval, filtering, and updating status. Once functional, develop the frontend admin dashboard to interface with these routes.
+*   **Verify:** Use Postman to retrieve, filter, and update product records in the database. Verify that the frontend UI correctly displays the products for the admin and allows them to approve or reject or ban or suspend or unban or unsuspend products and sellers. Then save the updated products in the database and verify that the products are updated in the database.
+
 ### Phase 3: AI Fraud Detection for Products
 *   **Goal:** Automatically analyze new product listings to detect potential fraud, counterfeits, or policy violations.
 *   **How:** Integrate the Gemini API into the backend's product submission flow. The AI will evaluate the product details to assign a risk score and reasoning before the listing goes live.
