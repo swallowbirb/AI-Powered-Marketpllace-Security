@@ -2,7 +2,14 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 
 async function run() {
-  await mongoose.connect(process.env.MONGODB_URI);
+  const primaryUri = process.env.MONGODB_URI;
+  const fallbackUri = 'mongodb://127.0.0.1:27017/marketplace';
+  try {
+    await mongoose.connect(primaryUri, { serverSelectionTimeoutMS: 5000 });
+  } catch (err) {
+    console.warn(`Primary connection failed: ${err.message}. Connecting to fallback.`);
+    await mongoose.connect(fallbackUri);
+  }
   const User = require('./src/modules/users/user.model');
   const Product = require('./src/modules/products/product.model');
   const orderService = require('./src/modules/orders/order.service');

@@ -317,7 +317,7 @@ export default function CatalogEntryDetailPage() {
           <ChevronRight className="w-3 h-3" />
           {entry.brandId && (
             <>
-              <span className="text-[#FF9900]">{entry.brandId.name}</span>
+              <Link to={`/brand-store/${entry.brandId._id}`} className="text-[#FF9900] hover:underline hover:text-[#FFB347]">{entry.brandId.name}</Link>
               <ChevronRight className="w-3 h-3" />
             </>
           )}
@@ -337,13 +337,15 @@ export default function CatalogEntryDetailPage() {
             {/* Brand badge */}
             {entry.brandId && (
               <div className="flex items-center gap-2">
-                {entry.brandId.logoUrl ? (
-                  <img src={entry.brandId.logoUrl} alt={entry.brandId.name} className="h-6 object-contain" />
-                ) : (
-                  <span className="text-sm font-bold text-[#FF9900] flex items-center gap-1">
-                    <Shield className="w-3.5 h-3.5" /> {entry.brandId.name}
-                  </span>
-                )}
+                <Link to={`/brand-store/${entry.brandId._id}`} className="hover:opacity-80 transition-opacity">
+                  {entry.brandId.logoUrl ? (
+                    <img src={entry.brandId.logoUrl} alt={entry.brandId.name} className="h-6 object-contain bg-white rounded px-1" />
+                  ) : (
+                    <span className="text-sm font-bold text-[#FF9900] flex items-center gap-1 hover:underline">
+                      <Shield className="w-3.5 h-3.5" /> {entry.brandId.name}
+                    </span>
+                  )}
+                </Link>
                 {entry.brandId.isVerified && (
                   <span className="text-[10px] bg-green-500/10 text-green-400 border border-green-500/20 px-2 py-0.5 rounded-full">✓ Verified Brand</span>
                 )}

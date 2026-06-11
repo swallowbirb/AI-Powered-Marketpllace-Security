@@ -111,8 +111,8 @@ const deleteProduct = async (req, res, next) => {
 
 const searchProducts = async (req, res, next) => {
   try {
-    const { q, category, minPrice, maxPrice, minRating, sort, page = 1, limit = 20 } = req.query;
-    const filters = { q, category, minPrice, maxPrice, minRating, sort };
+    const { q, category, minPrice, maxPrice, minRating, sort, page = 1, limit = 20, verifiedOnly } = req.query;
+    const filters = { q, category, minPrice, maxPrice, minRating, sort, verifiedOnly };
 
     const result = await productService.searchProducts(filters, Number(page), Number(limit));
     res.status(200).json({ success: true, data: result });

@@ -185,3 +185,50 @@ add more pages if needed this is just for reference!
 
 *TODO: Think more about Dev Mode features, add/remove features later!*
 *TODO: Design the Dev Mode UI layout and components.*
+
+
+## TEMP
+
+### AI Integration 1:
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Seller
+    actor Admin
+    participant FE as Frontend (React)
+    participant BE as Backend (Express)
+    participant ML as ML Service (FastAPI + SBERT)
+    participant DB as MongoDB
+
+    Seller->>FE: Submits "New Product Listing"
+    FE->>BE: POST /api/products
+    Note over BE: Sets status: "pending_review"<br/>Saves product to database
+    BE->>DB: Save product
+    BE-->>FE: Success response (Unblocks UI)
+    FE-->>Seller: Redirects to Seller Dashboard
+
+    Note over BE: Asynchronous Background Job Starts
+    BE->>DB: Fetch registered brands & catalogs
+    DB-->>BE: Brands and Catalogs
+    BE->>ML: POST /ml/analyze-product (payload)
+    Note over ML: 1. Checks Brand Name Jaro-Winkler similarity<br/>2. Compares Description Semantic Similarity (SBERT)<br/>3. Scans for duplicate image URLs
+    ML-->>BE: Returns ProductRS (0-100) & Risk Level
+    
+    Note over BE: Evaluates risk action threshold
+    alt Risk Level is Low
+        BE->>DB: Save as status: "approved"
+    else Risk Level is Medium
+        BE->>DB: Save as status: "flagged"
+    else Risk Level is High
+        BE->>DB: Save as status: "suspended"
+    end
+
+    Admin->>FE: Opens Admin Dashboard
+    FE->>BE: GET /api/admin/products
+    BE->>DB: Query products
+    DB-->>BE: List of products (with Risk Level & Status)
+    BE-->>FE: Display products
+    Admin->>FE: Overrides status (Approve / Reject)
+    FE->>BE: PATCH /api/admin/products/:id/status
+    BE->>DB: Update status
+```

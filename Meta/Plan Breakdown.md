@@ -25,20 +25,17 @@ At the end of each subphase give verification checklist, if also list these same
 *   **How:** Build the backend API routes for product retrieval, filtering, and updating status. Once functional, develop the frontend admin dashboard to interface with these routes.
 *   **Verify:** Use Postman to retrieve, filter, and update product records in the database. Verify that the frontend UI correctly displays the products for the admin and allows them to approve or reject or ban or suspend or unban or unsuspend products and sellers. Then save the updated products in the database and verify that the products are updated in the database.
 
+### Phase 3: Platform Foundation
+- ./Phase3-Platform-Foundation.md
+- ./Phase3-Platform-Foundation-v2.67.md
+- ./Phase3-Platform-Foundation-v3.43.md
+
 ### Phase 3: AI Fraud Detection for Products
-*   **Goal:** Automatically analyze new product listings to detect potential fraud, counterfeits, or policy violations.
-*   **How:** Integrate the Gemini API into the backend's product submission flow. The AI will evaluate the product details to assign a risk score and reasoning before the listing goes live.
-*   **Verify:** Submit both normal and highly suspicious product listings via Postman. Confirm that the backend correctly calls the AI, receives a valid risk score, and updates the product's status accordingly in the database.
 
 ### Phase 4: Review System and Authenticity Checks
-*   **Goal:** Enable buyers to submit product reviews while actively detecting fake, bot-generated, or coordinated review patterns.
-*   **How:** Create backend routes for review submissions and integrate AI analysis to evaluate review text and patterns. Follow this by building the frontend interfaces for users to read and write reviews.
-*   **Verify:** Send various types of reviews (organic, repetitive, spam) using Postman. Check that the AI accurately analyzes them and flags suspicious reviews in the system.
+
 
 ### Phase 5: Admin Moderation Dashboard
-*   **Goal:** Provide administrators with a centralized view to monitor the platform and take action on high-risk or flagged items.
-*   **How:** Develop backend routes that aggregate flagged products and reviews, allowing admins to approve or reject them. Build a dedicated frontend admin dashboard to visualize and interact with this data.
-*   **Verify:** Simulate admin approval and rejection actions via Postman to ensure database statuses update correctly. Then, verify the admin UI accurately reflects the platform's current state.
 
 ### Phase 6: Developer Simulation Toolkit
 *   **Goal:** Build internal tools to generate fake data and simulate complex fraud scenarios for stress-testing the AI.

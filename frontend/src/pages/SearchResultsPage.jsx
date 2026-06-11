@@ -28,6 +28,7 @@ export default function SearchResultsPage() {
   const minRating = searchParams.get('minRating');
   const sort = searchParams.get('sort') || 'newest';
   const page = Number(searchParams.get('page')) || 1;
+  const verifiedOnly = searchParams.get('verifiedOnly') === 'true';
 
   const fetchResults = useCallback(async () => {
     setIsLoading(true);
@@ -38,6 +39,7 @@ export default function SearchResultsPage() {
       if (minPrice) params.minPrice = minPrice;
       if (maxPrice) params.maxPrice = maxPrice;
       if (minRating) params.minRating = minRating;
+      if (verifiedOnly) params.verifiedOnly = true;
 
       const response = await searchProducts(params);
       if (response.success) {
@@ -50,7 +52,7 @@ export default function SearchResultsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [q, category, minPrice, maxPrice, minRating, sort, page]);
+  }, [q, category, minPrice, maxPrice, minRating, sort, page, verifiedOnly]);
 
   useEffect(() => {
     fetchResults();
@@ -108,7 +110,13 @@ export default function SearchResultsPage() {
         <div className="flex gap-6">
           {/* Filter sidebar */}
           <FilterSidebar
-            filters={{ category, minPrice: minPrice ? Number(minPrice) : undefined, maxPrice: maxPrice ? Number(maxPrice) : undefined, minRating: minRating ? Number(minRating) : undefined }}
+            filters={{
+              category,
+              minPrice: minPrice ? Number(minPrice) : undefined,
+              maxPrice: maxPrice ? Number(maxPrice) : undefined,
+              minRating: minRating ? Number(minRating) : undefined,
+              verifiedOnly
+            }}
             onFilterChange={handleFilterChange}
             onClear={clearFilters}
           />

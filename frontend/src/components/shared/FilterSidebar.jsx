@@ -33,7 +33,7 @@ export default function FilterSidebar({ filters, onFilterChange, onClear }) {
     onFilterChange({ minRating: filters.minRating === rating ? undefined : rating });
   };
 
-  const hasActiveFilters = filters.category || filters.minPrice !== undefined || filters.minRating !== undefined;
+  const hasActiveFilters = filters.category || filters.minPrice !== undefined || filters.minRating !== undefined || filters.verifiedOnly;
 
   const SidebarContent = () => (
     <div className="space-y-5">
@@ -45,6 +45,23 @@ export default function FilterSidebar({ filters, onFilterChange, onClear }) {
           <X className="w-3.5 h-3.5" /> Clear all filters
         </button>
       )}
+
+      {/* Listing Type / Verification */}
+      <div className="border-b border-gray-200 pb-4">
+        <h3 className="font-bold text-sm text-gray-900 mb-2">Listing Type</h3>
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={!!filters.verifiedOnly}
+            onChange={(e) => onFilterChange({ verifiedOnly: e.target.checked ? 'true' : undefined })}
+            className="rounded border-gray-300 text-[#FF9900] focus:ring-[#FF9900] w-4 h-4 cursor-pointer"
+          />
+          <span className="text-sm text-gray-700 flex items-center gap-1">
+            Verified Brands Only
+            <span className="inline-flex items-center justify-center bg-[#10b981] text-white text-[8px] font-bold px-1.5 py-0.5 rounded ml-1" title="Verified Brand Catalog Entry">✓ Verified</span>
+          </span>
+        </label>
+      </div>
 
       {/* Category */}
       <div className="border-b border-gray-200 pb-4">

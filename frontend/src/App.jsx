@@ -22,6 +22,7 @@ import BrandDashboard from './pages/brand/BrandDashboard';
 import NewOfferPage from './pages/NewOfferPage';
 import CatalogEntryDetailPage from './pages/CatalogEntryDetailPage';
 import BuyerOrdersPage from './pages/BuyerOrdersPage';
+import BrandStorePage from './pages/BrandStorePage';
 
 // ─── Role Guards ────────────────────────────────────────────────────────────
 
@@ -135,6 +136,7 @@ function App() {
               <Route path="/products/:id" element={<MarketplaceLayout><ProductDetailPage /></MarketplaceLayout>} />
               <Route path="/p/:entryId" element={<MarketplaceLayout><CatalogEntryDetailPage /></MarketplaceLayout>} />
               <Route path="/seller/:id/store" element={<MarketplaceLayout><StorePage /></MarketplaceLayout>} />
+              <Route path="/brand-store/:id" element={<MarketplaceLayout><BrandStorePage /></MarketplaceLayout>} />
 
               {/* Auth routes */}
               <Route path="/sign-in/*" element={<CustomSignedOut><SignInPage /></CustomSignedOut>} />

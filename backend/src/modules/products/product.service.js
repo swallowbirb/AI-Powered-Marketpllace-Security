@@ -1,8 +1,17 @@
 const Product = require('./product.model');
+const aiPipelineService = require('../../services/aiPipeline.service');
 
 const createProduct = async (productData) => {
+  productData.status = 'pending_review';
   const product = new Product(productData);
-  return await product.save();
+  const savedProduct = await product.save();
+  
+  // Trigger AI pipeline asynchronously
+  aiPipelineService.analyzeProductListing(savedProduct._id).catch(err => {
+    console.error("AI Pipeline Trigger Error:", err);
+  });
+  
+  return savedProduct;
 };
 
 const getProductsBySeller = async (sellerId) => {
@@ -22,7 +31,14 @@ const getAllPublishedProducts = async () => {
     .lean();
 
   const buyBoxOffers = await SellerOffer.find({ status: 'active', isBuyBoxWinner: true })
-    .populate('catalogEntryId', 'title officialImages category tags createdAt activeOfferCount')
+    .populate({
+      path: 'catalogEntryId',
+      select: 'title officialImages category tags createdAt activeOfferCount brandId',
+      populate: {
+        path: 'brandId',
+        select: 'name logoUrl'
+      }
+    })
     .populate('sellerId', 'firstName lastName storeName averageRating')
     .lean();
 
@@ -36,12 +52,46 @@ const getAllPublishedProducts = async () => {
       category: offer.catalogEntryId.category,
       images: offer.catalogEntryId.officialImages,
       sellerId: offer.sellerId,
+      brandId: offer.catalogEntryId.brandId?._id || offer.catalogEntryId.brandId,
+      brandName: offer.catalogEntryId.brandId?.name || 'Verified Brand',
       averageRating: 0,
       reviewCount: 0,
       createdAt: offer.catalogEntryId.createdAt
     }));
 
-  const combined = [...products, ...catalogProducts].sort((a, b) => b.createdAt - a.createdAt);
+  // Separate into verified (catalog entries) and unverified
+  const verified = catalogProducts.sort((a, b) => b.createdAt - a.createdAt);
+  const unverified = products.sort((a, b) => b.createdAt - a.createdAt);
+
+  const combined = [];
+  let vIdx = 0;
+  let uIdx = 0;
+
+  // Interleave with at least 70% verified ratio (7 verified, 3 unverified)
+  while (vIdx < verified.length || uIdx < unverified.length) {
+    // Add up to 7 verified
+    for (let i = 0; i < 7 && vIdx < verified.length; i++) {
+      combined.push(verified[vIdx++]);
+    }
+    // Add up to 3 unverified
+    for (let i = 0; i < 3 && uIdx < unverified.length; i++) {
+      combined.push(unverified[uIdx++]);
+    }
+    
+    // If verified list is empty, push remaining unverified products
+    if (vIdx >= verified.length) {
+      while (uIdx < unverified.length) {
+        combined.push(unverified[uIdx++]);
+      }
+    }
+    // If unverified list is empty, push remaining verified products
+    if (uIdx >= unverified.length) {
+      while (vIdx < verified.length) {
+        combined.push(verified[vIdx++]);
+      }
+    }
+  }
+
   return combined;
 };
 
@@ -122,10 +172,14 @@ const searchProducts = async (filters = {}, page = 1, limit = 20) => {
   };
   const sort = sortOptions[filters.sort] || sortOptions.newest;
 
+  const isVerifiedOnly = filters.verifiedOnly === 'true' || filters.verifiedOnly === true;
+
   const [products] = await Promise.all([
-    Product.find(query)
-      .populate('sellerId', 'firstName lastName storeName averageRating')
-      .lean()
+    isVerifiedOnly
+      ? Promise.resolve([])
+      : Product.find(query)
+          .populate('sellerId', 'firstName lastName storeName averageRating')
+          .lean()
   ]);
 
   // For catalog entries, we first find matching entries, then find their buy box offers
@@ -139,7 +193,14 @@ const searchProducts = async (filters = {}, page = 1, limit = 20) => {
       status: 'active', 
       isBuyBoxWinner: true 
     })
-      .populate('catalogEntryId', 'title officialImages category tags createdAt activeOfferCount')
+      .populate({
+        path: 'catalogEntryId',
+        select: 'title officialImages category tags createdAt activeOfferCount brandId',
+        populate: {
+          path: 'brandId',
+          select: 'name logoUrl'
+        }
+      })
       .populate('sellerId', 'firstName lastName storeName averageRating')
       .lean();
   }
@@ -154,6 +215,8 @@ const searchProducts = async (filters = {}, page = 1, limit = 20) => {
       category: offer.catalogEntryId.category,
       images: offer.catalogEntryId.officialImages,
       sellerId: offer.sellerId,
+      brandId: offer.catalogEntryId.brandId?._id || offer.catalogEntryId.brandId,
+      brandName: offer.catalogEntryId.brandId?.name || 'Verified Brand',
       averageRating: 0,
       reviewCount: 0,
       createdAt: offer.catalogEntryId.createdAt

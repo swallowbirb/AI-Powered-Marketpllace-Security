@@ -6,7 +6,7 @@ import { Package } from 'lucide-react';
 const PLACEHOLDER_IMAGE = 'https://placehold.co/300x300/EAEDED/555?text=No+Image';
 
 export default function ProductCard({ product, index = 0 }) {
-  const image = product.images?.[0] || PLACEHOLDER_IMAGE;
+  const image = product.images?.[0] || product.officialImages?.[0] || PLACEHOLDER_IMAGE;
   const sellerName = product.sellerId?.storeName ||
     `${product.sellerId?.firstName || ''} ${product.sellerId?.lastName || ''}`.trim() ||
     'Marketplace Seller';
@@ -47,15 +47,28 @@ export default function ProductCard({ product, index = 0 }) {
 
             {/* Price */}
             <div className="mt-auto pt-1">
-              <span className="text-lg font-bold text-[#B12704]">
-                ${product.price.toFixed(2)}
-              </span>
+              {product.price !== undefined && product.price !== null ? (
+                <span className="text-lg font-bold text-[#B12704]">
+                  ${Number(product.price).toFixed(2)}
+                </span>
+              ) : (
+                <span className="text-sm font-medium text-gray-500">
+                  View Offers
+                </span>
+              )}
             </div>
 
-            {/* Seller */}
-            <p className="text-[11px] text-gray-500 truncate">
-              by <span className="text-[#007185]">{sellerName}</span>
-            </p>
+            {/* Seller / Brand Link */}
+            {product.isCatalogEntry ? (
+              <p className="text-[11px] text-gray-500 truncate flex items-center gap-1 mt-auto">
+                by <Link to={`/brand-store/${product.brandId || product.brand?._id}`} className="text-[#007185] hover:underline hover:text-[#C7511F]">{product.brandName || 'Verified Brand'}</Link>
+                <span className="inline-flex items-center justify-center bg-[#10b981] text-white text-[8px] font-bold px-1 py-0.5 rounded ml-1" title="Verified Brand Catalog Entry">✓ Verified</span>
+              </p>
+            ) : (
+              <p className="text-[11px] text-gray-500 truncate mt-auto">
+                by <Link to={`/seller/${product.sellerId?._id}/store`} className="text-[#007185] hover:underline hover:text-[#C7511F]">{sellerName}</Link>
+              </p>
+            )}
 
             {/* Verified seller badge */}
             {product.sellerId?.averageRating >= 4 && (
