@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useCustomUser } from '../../context/CustomUserContext';
-import { Terminal, Shield, User, ShoppingBag, LogOut, Settings } from 'lucide-react';
+import { Terminal, Shield, User, ShoppingBag, LogOut, Settings, Trash2, Download, Database } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { eraseAllData, populateFakeStore, downloadDatabaseSnapshot } from '../../services/dev.service';
 
 export default function DevTools() {
   const isDev = process.env.NODE_ENV !== 'production' || import.meta.env?.DEV;
@@ -10,6 +11,7 @@ export default function DevTools() {
   const { isSignedIn, mongoUser, role } = useCustomUser();
   const [isOpen, setIsOpen] = useState(false);
   const [customId, setCustomId] = useState('');
+  const [isProcessingData, setIsProcessingData] = useState(false);
 
   const handleMockLogin = (id) => {
     localStorage.setItem('mock_clerk_id', id);
@@ -138,6 +140,56 @@ export default function DevTools() {
                 >
                   Go
                 </button>
+              </div>
+            </div>
+
+            {/* Data Management */}
+            <div className="space-y-2">
+              <span className="text-[11px] text-zinc-500 font-medium tracking-wider uppercase block">Data Management</span>
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={async () => {
+                    setIsProcessingData(true);
+                    await populateFakeStore();
+                    setIsProcessingData(false);
+                    window.location.reload();
+                  }}
+                  disabled={isProcessingData}
+                  className="flex items-center justify-center gap-1.5 bg-blue-950/40 hover:bg-blue-900/30 border border-blue-900/40 hover:border-blue-900/60 p-2.5 rounded-xl text-xs font-semibold text-blue-300 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  <span>{isProcessingData ? 'Processing...' : 'Populate FakeStoreAPI'}</span>
+                </button>
+                
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={async () => {
+                      setIsProcessingData(true);
+                      await downloadDatabaseSnapshot();
+                      setIsProcessingData(false);
+                    }}
+                    disabled={isProcessingData}
+                    className="flex items-center justify-center gap-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 p-2.5 rounded-xl text-xs font-semibold text-emerald-400 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Save DB</span>
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (window.confirm("Are you sure? This will wipe the database content (users are kept).")) {
+                        setIsProcessingData(true);
+                        await eraseAllData();
+                        setIsProcessingData(false);
+                        window.location.reload();
+                      }
+                    }}
+                    disabled={isProcessingData}
+                    className="flex items-center justify-center gap-1.5 bg-red-950/40 hover:bg-red-900/30 border border-red-900/40 hover:border-red-900/60 p-2.5 rounded-xl text-xs font-semibold text-red-400 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Erase Data</span>
+                  </button>
+                </div>
               </div>
             </div>
 

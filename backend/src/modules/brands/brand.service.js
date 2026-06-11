@@ -61,6 +61,25 @@ const getEnrolledSellerProducts = async (brandId, ownerId) => {
 };
 
 /**
+ * Get standalone products claiming this brand that have been flagged for manual review.
+ */
+const getFlaggedProducts = async (brandId, ownerId) => {
+  const brand = await Brand.findOne({ _id: brandId, ownerId }).lean();
+  if (!brand) throw new Error('Brand not found or unauthorized');
+
+  return await Product.find({
+    $or: [
+      { brandId },
+      { brandName: { $regex: new RegExp(`^${brand.name}$`, 'i') } }
+    ],
+    status: 'flagged'
+  })
+    .populate('sellerId', 'firstName lastName email storeName sellerRS riskLevel')
+    .sort({ createdAt: -1 })
+    .lean();
+};
+
+/**
  * Get pending enrollment requests for a brand.
  */
 const getPendingEnrollments = async (brandId, ownerId) => {
@@ -133,6 +152,7 @@ module.exports = {
   getBrandByOwner,
   getEnrolledSellers,
   getEnrolledSellerProducts,
+  getFlaggedProducts,
   getPendingEnrollments,
   requestEnrollment,
   updateEnrollmentStatus,

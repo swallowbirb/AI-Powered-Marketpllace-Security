@@ -66,6 +66,19 @@ const getEnrolledSellerProducts = async (req, res, next) => {
   }
 };
 
+const getFlaggedProducts = async (req, res, next) => {
+  try {
+    const ownerId = req.user._id;
+    const products = await brandService.getFlaggedProducts(req.params.id, ownerId);
+    res.status(200).json({ success: true, data: products });
+  } catch (error) {
+    if (error.message === 'Brand not found or unauthorized') {
+      return res.status(403).json({ success: false, message: error.message });
+    }
+    next(error);
+  }
+};
+
 const getPendingEnrollments = async (req, res, next) => {
   try {
     const ownerId = req.user._id;
@@ -128,6 +141,7 @@ module.exports = {
   getMyBrand,
   getEnrolledSellers,
   getEnrolledSellerProducts,
+  getFlaggedProducts,
   getPendingEnrollments,
   requestEnrollment,
   updateEnrollmentStatus,

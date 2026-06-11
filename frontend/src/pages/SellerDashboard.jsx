@@ -402,6 +402,21 @@ const SellerDashboard = () => {
                           <td className="p-4 text-zinc-300 font-medium">${product.price.toFixed(2)}</td>
                           <td className="p-4">
                             <StatusBadge status={product.status} />
+                            {product.status === 'flagged' && (
+                              <p className="text-[10px] text-rose-500/70 mt-1.5 max-w-[150px] leading-tight font-medium">
+                                Flagged for manual review. Low similarity with official brand catalog detected.
+                              </p>
+                            )}
+                            {product.status === 'pending_review' && (
+                              <p className="text-[10px] text-amber-500/70 mt-1.5 max-w-[150px] leading-tight">
+                                AI is currently analyzing this listing.
+                              </p>
+                            )}
+                            {product.status === 'suspended' && (
+                              <p className="text-[10px] text-red-500/70 mt-1.5 max-w-[150px] leading-tight font-medium">
+                                Suspended due to severe policy violations or high counterfeit risk.
+                              </p>
+                            )}
                           </td>
                           <td className="p-4 text-right">
                             <div className="flex justify-end items-center gap-3">

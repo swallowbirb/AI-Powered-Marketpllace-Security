@@ -369,7 +369,14 @@ const ProductsTab = () => {
                       </td>
                       <td className="px-5 py-4 text-zinc-300 font-medium">${product.price?.toFixed(2)}</td>
                       <td className="px-5 py-4"><StatusBadge status={product.status} /></td>
-                      <td className="px-5 py-4"><RiskBadge riskLevel={product.riskLevel} /></td>
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-2">
+                          <RiskBadge riskLevel={product.riskLevel} />
+                          {product.productRS !== null && product.productRS !== undefined && (
+                            <span className="text-xs text-zinc-500 font-medium">({product.productRS})</span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-5 py-4"><ModerationFlags banned={product.banned} suspended={product.suspended} /></td>
                       <td className="px-5 py-4">
                         <div className="flex items-center justify-end gap-1.5">

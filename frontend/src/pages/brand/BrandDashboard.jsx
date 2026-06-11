@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import {
   getMyBrand, createBrand, getEnrolledSellers,
-  getPendingEnrollments, updateEnrollmentStatus,
+  getPendingEnrollments, updateEnrollmentStatus, getFlaggedProducts
 } from '../../services/brand.service';
 import { getMyCatalogEntries, createCatalogEntry, updateCatalogEntry, deleteCatalogEntry } from '../../services/catalogEntry.service';
 import StarRating from '../../components/shared/StarRating';
@@ -335,6 +335,7 @@ export default function BrandDashboard() {
   const [sellers, setSellers] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
   const [catalogEntries, setCatalogEntries] = useState([]);
+  const [flaggedProducts, setFlaggedProducts] = useState([]);
   const [activeTab, setActiveTab] = useState('sellers');
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
@@ -385,12 +386,14 @@ export default function BrandDashboard() {
   };
 
   const loadBrandData = async (brandId) => {
-    const [sellersRes, enrollmentsRes] = await Promise.all([
+    const [sellersRes, enrollmentsRes, flaggedRes] = await Promise.all([
       getEnrolledSellers(brandId),
       getPendingEnrollments(brandId),
+      getFlaggedProducts(brandId),
     ]);
     if (sellersRes.success) setSellers(sellersRes.data);
     if (enrollmentsRes.success) setEnrollments(enrollmentsRes.data);
+    if (flaggedRes.success) setFlaggedProducts(flaggedRes.data);
   };
 
   const handleCreateBrand = async (e) => {
@@ -517,6 +520,7 @@ export default function BrandDashboard() {
     { id: 'sellers', label: 'Enrolled Sellers', icon: Users, count: sellers.length },
     { id: 'requests', label: 'Enrollment Requests', icon: Clock, count: enrollments.length },
     { id: 'catalog', label: 'Product Catalog', icon: BookOpen, count: brand?.catalogEntryCount ?? catalogEntries.filter(e => e.isActive).length },
+    { id: 'flagged', label: 'Counterfeit Reports', icon: AlertTriangle, count: flaggedProducts.length },
   ];
 
   return (
@@ -807,6 +811,90 @@ export default function BrandDashboard() {
                       onDelete={handleCatalogDelete}
                     />
                   ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Flagged Listings / Counterfeit Reports ────────────────────── */}
+          {activeTab === 'flagged' && (
+            <div className="space-y-4">
+              <div className="bg-gradient-to-r from-red-500/5 via-rose-500/5 to-orange-500/5 border border-red-500/20 rounded-2xl p-4 flex items-start gap-3">
+                <Shield className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-red-300">AI Counterfeit Detection Reports</p>
+                  <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
+                    These are standalone product listings created by unverified sellers claiming your brand name. 
+                    The AI pipeline has flagged them for having a low similarity score against your official catalog entries.
+                  </p>
+                </div>
+              </div>
+
+              {flaggedProducts.length === 0 ? (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-12 text-center">
+                  <CheckCircle className="w-12 h-12 text-emerald-500/50 mx-auto mb-4" />
+                  <h3 className="text-lg font-bold mb-2">No Flagged Listings</h3>
+                  <p className="text-zinc-400 text-sm">No suspicious products claiming your brand are currently flagged.</p>
+                </div>
+              ) : (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+                  <div className="p-5 border-b border-zinc-800">
+                    <h2 className="font-bold text-lg">Flagged Counterfeits ({flaggedProducts.length})</h2>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-zinc-800/50 text-xs text-zinc-400 border-b border-zinc-800">
+                        <tr>
+                          <th className="px-4 py-3 font-medium">Product Listing</th>
+                          <th className="px-4 py-3 font-medium">Claimed Brand</th>
+                          <th className="px-4 py-3 font-medium">Seller</th>
+                          <th className="px-4 py-3 font-medium">Risk Score</th>
+                          <th className="px-4 py-3 font-medium">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {flaggedProducts.map((product) => (
+                          <tr key={product._id} className="border-b border-zinc-800/50 hover:bg-zinc-800/20 transition-colors">
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                {product.images?.[0] ? (
+                                  <img src={product.images[0]} alt="" className="w-10 h-10 rounded bg-zinc-800 object-cover" />
+                                ) : (
+                                  <div className="w-10 h-10 rounded bg-zinc-800 flex items-center justify-center">
+                                    <ImageIcon className="w-4 h-4 text-zinc-600" />
+                                  </div>
+                                )}
+                                <div>
+                                  <Link to={`/p/${product._id}`} className="font-medium text-sm text-zinc-200 hover:text-[#FF9900] truncate max-w-[200px] block">
+                                    {product.title}
+                                  </Link>
+                                  <p className="text-xs text-zinc-500">${product.price?.toFixed(2)}</p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-zinc-300">{product.brandName || <span className="text-zinc-600">—</span>}</td>
+                            <td className="px-4 py-3">
+                              <p className="text-sm">{product.sellerId?.storeName || `${product.sellerId?.firstName} ${product.sellerId?.lastName}`.trim()}</p>
+                              <Link to={`/seller/${product.sellerId?._id}/store`} className="text-xs text-[#007185] hover:underline">View Store</Link>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${RISK_COLORS[product.riskLevel] || 'bg-zinc-800 text-zinc-400'}`}>
+                                  {product.riskLevel ? product.riskLevel.charAt(0).toUpperCase() + product.riskLevel.slice(1) : 'Unknown'}
+                                </span>
+                                {product.productRS !== null && <span className="text-xs text-zinc-500">({product.productRS}/100)</span>}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <Link to={`/p/${product._id}`} className="text-xs bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-1.5 rounded-lg transition-colors inline-block">
+                                Review Listing
+                              </Link>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
             </div>
