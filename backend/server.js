@@ -16,6 +16,7 @@ const orderRoutes = require("./src/modules/orders/order.routes");
 const brandRoutes = require("./src/modules/brands/brand.routes");
 const brandCatalogRoutes = require("./src/modules/brandCatalog/brandCatalogEntry.routes");
 const offerRoutes = require("./src/modules/offers/sellerOffer.routes");
+const devRoutes = require("./src/modules/dev/dev.routes");
 
 const app = express();
 
@@ -46,6 +47,7 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/brands", brandRoutes);
 app.use("/api/brand-catalog", brandCatalogRoutes);
 app.use("/api/offers", offerRoutes);
+app.use("/api/dev", devRoutes);
 
 // Error Handler
 app.use(errorHandler);

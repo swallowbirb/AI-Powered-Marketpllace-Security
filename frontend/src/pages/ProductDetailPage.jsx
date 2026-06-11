@@ -230,13 +230,28 @@ export default function ProductDetailPage() {
 
             {/* Risk badge (visible if set) */}
             {product.riskLevel && (
-              <div className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-full w-fit font-medium ${
-                product.riskLevel === 'high' ? 'bg-red-50 text-red-700 border border-red-200' :
-                product.riskLevel === 'medium' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                'bg-green-50 text-green-700 border border-green-200'
-              }`}>
-                <Shield className="w-3.5 h-3.5" />
-                Risk Level: {product.riskLevel.charAt(0).toUpperCase() + product.riskLevel.slice(1)}
+              <div className="space-y-3">
+                <div className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-full w-fit font-medium ${
+                  product.riskLevel === 'high' ? 'bg-red-50 text-red-700 border border-red-200' :
+                  product.riskLevel === 'medium' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                  'bg-green-50 text-green-700 border border-green-200'
+                }`}>
+                  <Shield className="w-3.5 h-3.5" />
+                  Risk Level: {product.riskLevel.charAt(0).toUpperCase() + product.riskLevel.slice(1)}
+                </div>
+
+                {(product.riskLevel === 'medium' || product.riskLevel === 'high') && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: -5 }} 
+                    animate={{ opacity: 1, y: 0 }} 
+                    className="bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-800 flex items-start gap-2"
+                  >
+                    <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <p>
+                      <strong>Counterfeit Warning:</strong> This listing has been flagged by our AI systems for having low similarity to official brand records. Exercise caution before purchasing.
+                    </p>
+                  </motion.div>
+                )}
               </div>
             )}
 

@@ -30,6 +30,11 @@ export const getEnrolledSellerProducts = async (brandId) => {
   return response.data;
 };
 
+export const getFlaggedProducts = async (brandId) => {
+  const response = await api.get(`/brands/${brandId}/flagged-products`);
+  return response.data;
+};
+
 export const getPendingEnrollments = async (brandId) => {
   const response = await api.get(`/brands/${brandId}/enrollments/pending`);
   return response.data;

@@ -28,6 +28,9 @@ router.get('/:id/sellers', brandAuth, validateBrandId, brandController.getEnroll
 // GET  /api/brands/:id/products — Brand owner: get products from enrolled sellers
 router.get('/:id/products', brandAuth, validateBrandId, brandController.getEnrolledSellerProducts);
 
+// GET  /api/brands/:id/flagged-products — Brand owner: get flagged counterfeit claims
+router.get('/:id/flagged-products', brandAuth, validateBrandId, brandController.getFlaggedProducts);
+
 // GET  /api/brands/:id/enrollments/pending — Brand owner: see pending requests
 router.get('/:id/enrollments/pending', brandAuth, validateBrandId, brandController.getPendingEnrollments);
 
