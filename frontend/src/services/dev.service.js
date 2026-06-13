@@ -28,3 +28,16 @@ export const downloadDatabaseSnapshot = async () => {
     return { success: false, message: 'Download failed' };
   }
 };
+
+/**
+ * Reset all return-pipeline data (Items, Grades, Logs, LifecycleEvents, etc.)
+ * so the same product/order can be returned again from scratch.
+ *
+ * Pass mockClerkId to scope the wipe to the currently active mock user,
+ * or call without args to wipe everything.
+ */
+export const resetReturnData = async ({ mockClerkId } = {}) => {
+  const params = mockClerkId ? { mockClerkId } : {};
+  const response = await api.delete('/dev/reset-returns', { params });
+  return response.data;
+};

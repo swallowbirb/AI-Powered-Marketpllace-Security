@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useCustomUser } from '../../context/CustomUserContext';
-import { Terminal, Shield, User, ShoppingBag, LogOut, Settings, Trash2, Download, Database } from 'lucide-react';
+import { Terminal, Shield, User, ShoppingBag, LogOut, Settings, Trash2, Download, Database, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { eraseAllData, populateFakeStore, downloadDatabaseSnapshot } from '../../services/dev.service';
+import { eraseAllData, populateFakeStore, downloadDatabaseSnapshot, resetReturnData } from '../../services/dev.service';
 
 export default function DevTools() {
   const isDev = process.env.NODE_ENV !== 'production' || import.meta.env?.DEV;
@@ -159,6 +159,34 @@ export default function DevTools() {
                 >
                   <Database className="w-3.5 h-3.5" />
                   <span>{isProcessingData ? 'Processing...' : 'Populate FakeStoreAPI'}</span>
+                </button>
+
+                {/* Reset return data — wipe Items/Grades/Logs so same product can be re-returned */}
+                <button
+                  onClick={async () => {
+                    const mockId = localStorage.getItem('mock_clerk_id');
+                    const scope = mockId ? ` for "${mockId}"` : ' (ALL users)';
+                    if (window.confirm(`Reset all return pipeline data${scope}?\n\nThis deletes: Items, Grades, Logs, Lifecycle Events, Returns, Routing Decisions, Health Cards, and Trust Profiles.\n\nOrders and Products are kept.`)) {
+                      setIsProcessingData(true);
+                      const result = await resetReturnData({ mockClerkId: mockId || undefined });
+                      setIsProcessingData(false);
+                      if (result?.success) {
+                        const d = result.deleted || {};
+                        alert(
+                          `✅ Return data reset${scope}.\n\n` +
+                          `Items: ${d.items ?? 0} · Grades: ${d.grades ?? 0} · Logs: ${d.itemLogs ?? 0}\n` +
+                          `Lifecycle events: ${d.lifecycleEvents ?? 0} · Returns: ${d.returns ?? 0}\n` +
+                          `Routing: ${d.routingDecisions ?? 0} · Health cards: ${d.healthCards ?? 0}\n` +
+                          `Trust profiles: ${d.trustProfiles ?? 0}`
+                        );
+                      }
+                    }
+                  }}
+                  disabled={isProcessingData}
+                  className="flex items-center justify-center gap-1.5 bg-orange-950/40 hover:bg-orange-900/30 border border-orange-900/40 hover:border-orange-900/60 p-2.5 rounded-xl text-xs font-semibold text-orange-300 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>{isProcessingData ? 'Resetting...' : 'Reset Return Data'}</span>
                 </button>
                 
                 <div className="grid grid-cols-2 gap-2">

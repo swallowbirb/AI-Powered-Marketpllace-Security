@@ -268,10 +268,11 @@ const persistGrade = async ({ payload, ml }) => {
  */
 const triggerGrading = async (itemId, options = {}) => {
   // Normalize both calling conventions into one payload.
+  const productId = options.originalProductId || options.productId;
   const payload = {
     itemId,
     userId: options.userId,
-    productId: options.originalProductId || options.productId,
+    productId,
     reason: options.reason || options.returnClaimDescription || 'used item submission',
     imageUrls: options.evidencePhotos || options.imageUrls || [],
     intakePath: options.intakePath || 'sell-used',
@@ -279,6 +280,33 @@ const triggerGrading = async (itemId, options = {}) => {
     listingImageUrls: options.listingImageUrls || [],
     catalogHashes: options.catalogHashes || [],
   };
+
+  // Backfill listing reference photos from the catalog when the caller didn't
+  // supply them. The visual-comparison analyses (OpenCV colour delta, CLIP
+  // similarity) need the original product photos as a reference; without them
+  // those steps are skipped. attachEvidence only passes originalProductId, so we
+  // resolve the product's catalog images here.
+  if (payload.listingImageUrls.length === 0 && payload.productId &&
+      mongoose.Types.ObjectId.isValid(payload.productId)) {
+    try {
+      const Product = require('../products/product.model');
+      const product = await Product.findById(payload.productId).select('images').lean();
+      if (product && Array.isArray(product.images) && product.images.length > 0) {
+        payload.listingImageUrls = product.images;
+        await ItemLogger.log(itemId, 'ANALYSIS_REFERENCE',
+          `🖼️ Loaded ${product.images.length} listing reference photo(s) from the catalog ` +
+          `for visual comparison.`,
+          { phase: 'request', level: 'info', referenceCount: product.images.length,
+            productId: String(payload.productId) }
+        );
+      }
+    } catch (err) {
+      await ItemLogger.log(itemId, 'ANALYSIS_REFERENCE',
+        `⚠️ Could not load catalog reference photos — ${err.message || err}`,
+        { phase: 'request', level: 'warn', productId: String(payload.productId) }
+      );
+    }
+  }
 
   // --- Log the outgoing request (Req 1.4, 14) ---
   await ItemLogger.log(itemId, 'GRADING_REQUEST',

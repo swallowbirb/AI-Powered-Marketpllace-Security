@@ -142,3 +142,16 @@ dist
 .yarn/install-state.gz
 .pnp.*
 
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# One-off ops scripts (may contain bucket/region specifics)
+backend/set_s3_cors.js
