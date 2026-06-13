@@ -125,7 +125,7 @@ const markGraded = async (itemId, grade) => {
         gradeId: grade?._id ? String(grade._id) : null,
       }
     );
-    await ItemLogger.log(itemId, 'STATUS_UPDATE', '📊 Item status changed: GRADING → GRADED');
+    await ItemLogger.log(itemId, 'STATUS_UPDATE', '📊 Item status changed: GRADING → GRADED', { phase: 'complete', level: 'success' });
     if (grade?.flaggedForReview) {
       await ItemLogger.log(
         itemId,
@@ -171,7 +171,7 @@ const attachEvidence = async (itemId, photos, actor) => {
     item.status = 'EVIDENCE_PENDING';
     await item.save();
     await appendEvent(itemId, 'EVIDENCE_SUBMITTED', actor, { photoCount: photos.length });
-    await ItemLogger.log(itemId, 'STATUS_UPDATE', '📊 Status changed to EVIDENCE_PENDING');
+    await ItemLogger.log(itemId, 'STATUS_UPDATE', '📊 Status changed to EVIDENCE_PENDING', { phase: 'evidence' });
   } else {
     // Already EVIDENCE_PENDING — just save the new photos
     await item.save();
@@ -181,7 +181,7 @@ const attachEvidence = async (itemId, photos, actor) => {
   item.status = 'GRADING';
   await item.save();
   await appendEvent(itemId, 'GRADING', actor, { triggeredAt: new Date() });
-  await ItemLogger.log(itemId, 'PASS2_START', '⚙️ Starting AI grading analysis...');
+  await ItemLogger.log(itemId, 'PASS2_START', '⚙️ Starting AI grading analysis...', { phase: 'request' });
 
   // Fire-and-forget grading pipeline (Phase 2 implements this)
   try {

@@ -16,7 +16,7 @@ This directory contains detailed implementation guides for each phase of the Sec
 | **P4 — Routing** | ⏳ Next | Smart routing & disposition engine | ~4 hours |
 | **P5 — Resale Marketplace** | ⏳ Pending | AI listing gen, Health Card, resale storefront | ~4 hours |
 | **P6 — Demand Registry** | ⏳ Pending | Geospatial matching, notify-on-match | ~3 hours |
-| **P7 — Prevention Intelligence** | ⏳ Pending | Closed-loop RIKB + LightGBM/scorecard risk + fit intel + intervention engine ([Phase7-Prevention.md](./Phase7-Prevention.md)) | ~6 hours |
+| **P7 — Prevention Intelligence** | ⏳ Pending | Closed-loop RIKB + explainable risk scorecard + fit intel + intervention engine ([Phase7-Prevention.md](./Phase7-Prevention.md)) | ~4 hours |
 | **P8 — Sustainability** | ⏳ Pending | CO2 tracking, Green Credits, donation routing | ~3 hours |
 | **P9 — Demo Polish** | ⏳ Final | Persona scripts, error handling, rehearsal | ~2 hours |
 

@@ -24,7 +24,8 @@ class _FakeBedrock:
     def __init__(self, raw):
         self._raw = raw
 
-    async def invoke_json(self, prompt, images=None, max_tokens=2048, temperature=0.0):
+    async def invoke_json(self, prompt, images=None, max_tokens=2048, temperature=0.0, **kwargs):
+        # **kwargs tolerates the developer-trace interface (trace=, phase=, label=).
         return self._raw
 
 

@@ -30,7 +30,8 @@ actually build for the demo, what we mock, what we drop.
 | Green Credits ledger | **Build** | Light gamification on top of sustainability |
 | NGO/donation routing + tax receipt PDF | **Build** | Closes the Priya loop |
 | Return Intelligence Knowledge Base (own returns/reviews) | **Build** | Self-owned data asset; fuels all prevention; one tiny doc/SKU |
-| Return-risk model (LightGBM + explainable scorecard, schema-matched) | **Build** (offline-trained, served via FastAPI) | Calibrated + explainable; scorecard is the fallback |
+| Return-risk **scorecard** (pure, explainable, in-backend) | **Build** | Same pattern as Phase 3 trust scoring; no model training, runs instantly |
+| ~~Trained return-risk ML model (LightGBM)~~ | **Deferred** (post-hackathon) | On synthetic data it just re-learns the scorecard; real value needs real labels we don't have yet |
 | Fit/size intelligence (crowd-sourced from our returns + reviews) | **Build** | No body measurements; honest one-liner on the PDP |
 | Intervention engine (risk × trust → graduated nudge) | **Build** | Where prevention earns its keep; consumes Phase 3 trust |
 | Seller bulk dashboard | **Build** (light) | Closes the small-seller persona |
@@ -52,11 +53,13 @@ actually build for the demo, what we mock, what we drop.
         ▼
 [ Node + Express API ]  (existing repo, extended)
    │       │
+   │       │   • Prevention scorecard + fit intelligence run here (pure JS,
+   │       │     fed by the RIKB); no ML round-trip needed
+   │       │
    │       └──► [ FastAPI Python microservice ]
    │              • OpenCV, CLIP, imagehash, Pillow/EXIF
    │              • Boto3 → AWS Rekognition, Textract, Bedrock
-   │              • LightGBM return-risk model (+ explainable scorecard)
-   │              • Fit/size intelligence from own returns + reviews (RIKB)
+   │              (Phase 7 does not use the ML service — see Phase 7 notes)
    │
    ├──► [ Amazon Bedrock ]   Nova Pro (primary), Claude 3.5 Sonnet (fallback)
    ├──► [ Amazon S3 ]        all uploaded photos
@@ -119,7 +122,8 @@ can clone the repo, get a `.env`, and run end-to-end placeholder calls.
 4. **Repo skeleton.** Add three new top-level workspaces alongside the existing
    `backend/`:
    - `ml-service/` — the new FastAPI microservice (vision tools + Bedrock
-     orchestration + LightGBM return-risk model).
+     orchestration for grading). Note: Phase 7 prevention runs entirely in the
+     backend, not here.
    - Inside the existing `backend/src/modules/`, scaffold empty module folders
      for: `returns`, `secondhand`, `grading`, `routing`, `demand`, `health-card`,
      `sustainability`, `trust`. Mirrors the existing module-per-domain pattern.
@@ -588,9 +592,9 @@ buyers get notified; the routing engine uses the count as a real input.
 is not a bolt-on feature — it is the compounding moat. Every grading, return, and
 review the platform processes feeds a knowledge base that makes the *next* purchase
 smarter. We build a **closed-loop system** that (a) learns return causes from our own
-data, (b) scores return risk before checkout with a calibrated, explainable model,
-(c) intervenes with friction sized to *who the buyer is*, and (d) feeds defect/fit
-signals back to sellers — all at near-zero marginal cost.
+data, (b) scores return risk before checkout with a transparent, explainable scorecard
+(no model training — see subsystem 3), (c) intervenes with friction sized to *who the
+buyer is*, and (d) feeds defect/fit signals back to sellers — all at near-zero marginal cost.
 
 **Why this is a redesign over the old "XGBoost-on-Kaggle + Misra-KNN" plan.**
 Our actual schema has no size variants, discount %, COD/prepaid flag, multi-item
@@ -620,17 +624,19 @@ and genuinely self-improving.
    infeasible Misra-KNN with something cheaper and more convincing because it's real
    platform data.
 
-3. **Return-Risk Scoring Engine (hybrid: ML + explainable scorecard).** A FastAPI
-   `/predict/return` endpoint scores risk from features we can actually compute at
-   checkout: the SKU's own return rate (RIKB), category prior, price band, condition,
-   the buyer's trust tier + return behaviour (consumed from Phase 3, never recomputed),
-   first-time-in-category, and a fit-mismatch flag. The model is **LightGBM** (smaller,
-   faster, cheaper than XGBoost) trained offline on a *schema-matched synthetic dataset*
-   so its features are identical to production, with **calibrated** probabilities so the
-   displayed percentage is honest. Running alongside it is a pure, explainable
-   **scorecard** (same pattern as Phase 3's trust scoring) that supplies the top-3
-   human-readable risk reasons *and* is the graceful fallback when the model is cold or
-   the ML service is down.
+3. **Return-Risk Scoring Engine (an explainable scorecard).** A pure, transparent
+   **scorecard** — same pattern as Phase 3's trust scoring — scores risk 0–100 from
+   features we can actually compute at checkout: the SKU's own return rate (RIKB),
+   category prior, price band, condition, the buyer's trust tier + return behaviour
+   (consumed from Phase 3, never recomputed), first-time-in-category, and a fit-mismatch
+   flag. Known signals, known weights, the top-3 human-readable reasons — it runs as a
+   pure function inside the backend, needs no training and no ML round-trip, and is
+   trustworthy *because* every number is explainable. **A trained ML model (LightGBM) is
+   deliberately deferred** to post-hackathon: on the synthetic data we'd have to invent,
+   it would only re-learn the scorecard's own formula, so it adds cost and opacity
+   without adding signal. The honest upgrade — retraining on the platform's *real*
+   accumulated return labels — is a documented roadmap step, and the feature vector is
+   designed so that swap is a drop-in later.
 
 4. **Intervention Engine.** A new `prevention/` backend module maps
    (risk band × trust tier × context) to a graduated, configurable intervention — the
@@ -656,20 +662,21 @@ and genuinely self-improving.
    costs almost nothing. Fixing the listing prevents the *next* wave of returns.
 
 6. **The Closed Loop.** A nightly `prevention.recompute` job rebuilds the RIKB from the
-   latest data, so every prediction and nudge sharpens over time. Retraining LightGBM
-   from accumulated real labels is a documented roadmap step once volume justifies it;
-   the hackathon ships the loop wiring and the nightly recompute so "self-improving" is
-   real, not promised.
+   latest data, so every nudge sharpens over time — as real returns accumulate, the
+   return rates, fit verdicts, and complaint clusters the scorecard reads all improve on
+   their own, no retraining required. Training an ML model on accumulated *real* labels
+   is the documented next step once volume justifies it; the hackathon ships the loop
+   wiring and the nightly recompute, so "self-improving" is real today, not promised.
 
-**Cost & storage discipline (the binding constraint):** no GPU (LightGBM on CPU, a
-kilobytes-to-low-MB model file); no new managed services (reuse FastAPI + Atlas M0); the
-per-request path is one indexed Mongo read + a local model inference + pure scorecard
-math — no per-view LLM or vision calls; the only LLM use is the nightly, cached
-seller-summary batch; the RIKB stores bounded aggregates, not raw event history. The
-whole layer degrades to the scorecard if anything is unavailable.
+**Cost & storage discipline (the binding constraint):** no GPU and no model training (the
+scorecard is pure arithmetic); no new managed services (reuse Atlas M0); no extra
+cross-service traffic (prevention runs in the backend, not the ML service); the
+per-request path is one indexed Mongo read + pure scorecard math — no per-view LLM or
+vision calls; the only LLM use is the optional nightly, cached seller-summary batch; the
+RIKB stores bounded aggregates, not raw event history.
 
-**Done means:** the PDP shows a data-backed fit/return note; checkout shows a calibrated,
-explainable risk nudge with a concrete CTA for risky baskets; bracketing is intercepted
+**Done means:** the PDP shows a data-backed fit/return note; checkout shows an explainable
+risk nudge with a concrete CTA for risky baskets; bracketing is intercepted
 at the cart; refund timing respects the trust tier; the seller dashboard shows per-SKU
 return-reason clusters; and a nightly job demonstrably refreshes the knowledge base so
 the system improves with every return.
@@ -795,10 +802,12 @@ in under five minutes, every time.
 **Honest caveats for the pitch.**
 - Vision-LLM grading is probabilistic, not a calibrated industrial inspection.
   Pitch as "AI-assisted grading" with human review on low-confidence cases.
-- The return-risk model is trained on a schema-matched *synthetic* bootstrap, not
-  yet on real labels — say so. Quote AUC 0.72–0.78 on that synthetic set honestly,
-  and frame the explainable scorecard + nightly RIKB recompute as what makes it
-  trustworthy and self-improving today. Real-label retraining is the roadmap step.
+- Return-risk scoring is a transparent **scorecard** (hand-set, explainable weights),
+  not a trained model — say so, and frame that as a strength: every number on the
+  nudge is auditable, and the nightly RIKB recompute makes it self-improving as real
+  returns accumulate. A trained model on real labels is the roadmap step; we
+  deliberately did *not* train one on synthetic data, since that would only re-learn
+  the scorecard while adding opacity.
 - Crypto signatures verify the *digital record*, not the physical product —
   a determined fraudster can attach a valid QR to a fake item. Combine with
   the trust score and the photo evidence to mitigate; mention the limitation
