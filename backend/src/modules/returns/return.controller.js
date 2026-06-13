@@ -7,7 +7,7 @@ const initiateReturn = async (req, res, next) => {
     const result = await returnService.initiateReturn(userId, { orderId, reasonCode, reasonText });
     res.status(201).json({ success: true, data: result });
   } catch (err) {
-    if (['Order not found or not eligible for return', 'Return window expired', 'A return already exists for this order'].includes(err.message)) {
+    if (['Order not found or not eligible for return', 'Return window expired', 'A return already exists for this order', 'A sell-used listing already exists for this order — you cannot also return it'].includes(err.message)) {
       return res.status(400).json({ success: false, message: err.message });
     }
     next(err);

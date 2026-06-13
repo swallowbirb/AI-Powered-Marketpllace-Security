@@ -7,7 +7,7 @@ const initiateFromOrder = async (req, res, next) => {
     const result = await secondhandService.initiateFromOrder(userId, { orderId, description, askingPrice });
     res.status(201).json({ success: true, data: result });
   } catch (err) {
-    if (['Order not found or not eligible', 'A sell-used listing already exists for this order'].includes(err.message)) {
+    if (['Order not found or not eligible', 'A sell-used listing already exists for this order', 'A return already exists for this order — you cannot also sell it'].includes(err.message)) {
       return res.status(400).json({ success: false, message: err.message });
     }
     next(err);

@@ -19,6 +19,11 @@ const initiateFromOrder = async (userId, { orderId, description, askingPrice }) 
   const existing = await SecondhandItem.findOne({ orderId, userId });
   if (existing) throw new Error('A sell-used listing already exists for this order');
 
+  // Block if a return already exists for this order
+  const Return = require('../returns/return.model');
+  const existingReturn = await Return.findOne({ orderId, userId });
+  if (existingReturn) throw new Error('A return already exists for this order — you cannot also sell it');
+
   const isCatalog = !!order.catalogEntryId;
   const productTitle = isCatalog ? order.catalogEntryId?.title : order.productId?.title;
   const productCategory = isCatalog ? order.catalogEntryId?.category : order.productId?.category;
@@ -79,6 +84,11 @@ const submitEvidence = async (userId, itemId, photos) => {
   if (!item) throw new Error('Item not found');
   if (item.initiatorUserId.toString() !== userId.toString()) throw new Error('Forbidden');
   if (item.intakePath !== 'sell-used') throw new Error('Item is not a sell-used listing');
+
+  // If already in GRADING (e.g. previous request partially succeeded), return success
+  if (item.status === 'GRADING') {
+    return item;
+  }
 
   return itemService.attachEvidence(itemId, photos, { userId, role: 'buyer' });
 };

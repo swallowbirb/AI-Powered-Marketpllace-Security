@@ -48,20 +48,32 @@ const createItem = async (data, actor) => {
 const attachEvidence = async (itemId, photos, actor) => {
   const item = await Item.findById(itemId);
   if (!item) throw new Error('Item not found');
-  if (item.status !== 'INITIATED') {
+
+  // Allow re-submission if item got stuck mid-transition (e.g. after a previous failed request)
+  const attachableStatuses = ['INITIATED', 'EVIDENCE_PENDING'];
+  if (!attachableStatuses.includes(item.status)) {
     throw new Error(`Cannot attach evidence when item is in status: ${item.status}`);
   }
   if (!photos || photos.length === 0) {
     throw new Error('At least one photo is required');
   }
 
-  // Append photos
-  item.evidencePhotos.push(...photos);
-  item.status = 'EVIDENCE_PENDING';
-  await item.save();
-  await appendEvent(itemId, 'EVIDENCE_SUBMITTED', actor, { photoCount: photos.length });
+  // Append photos (avoid duplicates on re-submit)
+  const existingUrls = new Set(item.evidencePhotos.map(String));
+  const newPhotos = photos.filter((p) => !existingUrls.has(String(p)));
+  if (newPhotos.length > 0) item.evidencePhotos.push(...newPhotos);
 
-  // Immediately transition to GRADING
+  // Transition to EVIDENCE_PENDING only if not already past it
+  if (item.status === 'INITIATED') {
+    item.status = 'EVIDENCE_PENDING';
+    await item.save();
+    await appendEvent(itemId, 'EVIDENCE_SUBMITTED', actor, { photoCount: photos.length });
+  } else {
+    // Already EVIDENCE_PENDING — just save the new photos
+    await item.save();
+  }
+
+  // Transition to GRADING
   item.status = 'GRADING';
   await item.save();
   await appendEvent(itemId, 'GRADING', actor, { triggeredAt: new Date() });
