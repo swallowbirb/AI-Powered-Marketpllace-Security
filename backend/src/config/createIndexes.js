@@ -22,8 +22,9 @@ async function createIndexes() {
   await db.collection('items').createIndex({ userId: 1, status: 1 });
   console.log('✓ items indexes');
 
-  // grades
-  await db.collection('grades').createIndex({ itemId: 1 });
+  // grades — one grade per item (Req 8.1)
+  await db.collection('grades').createIndex({ itemId: 1 }, { unique: true });
+  await db.collection('grades').createIndex({ flaggedForReview: 1, createdAt: -1 });
   console.log('✓ grades indexes');
 
   // lifecycleEvents — hash chain

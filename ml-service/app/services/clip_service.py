@@ -1,28 +1,139 @@
 """
-CLIP embedding service for image-text similarity.
-Used in Phase 2 for counterfeit detection and product matching.
-TODO: implement when CLIP model is available — Phase 2
+CLIP service — Task 2.2
+
+Zero-shot subject match + visual similarity using openai/clip-vit-base-patch32.
+The model is lazy-loaded on first use and cached in module scope (CPU is fine for
+the demo). All image inputs are S3 URL strings; bytes are fetched on demand and
+fetch failures are handled gracefully.
 """
+import io
+import asyncio
+import logging
+from typing import List, Optional
+
+import numpy as np
+from PIL import Image
+
+from app.config import settings
+from app.services.image_utils import try_fetch_image_bytes
+
+logger = logging.getLogger("ml-service.clip")
+
+# Module-scoped cache so the heavy model loads only once.
+_model = None
+_processor = None
+
+
+def _load_model():
+    """Lazy-load CLIP model + processor. Returns (model, processor) or (None, None)."""
+    global _model, _processor
+    if _model is not None and _processor is not None:
+        return _model, _processor
+    try:
+        import torch  # noqa: F401
+        from transformers import CLIPModel, CLIPProcessor
+
+        logger.info("Loading CLIP model %s ...", settings.clip_model_name)
+        _model = CLIPModel.from_pretrained(settings.clip_model_name)
+        _model.eval()
+        _processor = CLIPProcessor.from_pretrained(settings.clip_model_name)
+        return _model, _processor
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("CLIP model unavailable: %s", exc)
+        return None, None
+
+
+def _open_image(image_bytes: bytes) -> Optional[Image.Image]:
+    try:
+        return Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not decode image for CLIP: %s", exc)
+        return None
 
 
 class CLIPService:
-    def __init__(self):
-        self.model = None  # TODO: load CLIP model
+    def _image_embedding_sync(self, image: Image.Image) -> Optional[np.ndarray]:
+        model, processor = _load_model()
+        if model is None:
+            return None
+        import torch
 
-    async def get_image_embedding(self, image_bytes: bytes) -> list:
-        """Returns a 512-dim CLIP embedding for the image."""
-        raise NotImplementedError("CLIP service not yet implemented — Phase 2")
+        inputs = processor(images=image, return_tensors="pt")
+        with torch.no_grad():
+            feats = model.get_image_features(**inputs)
+        vec = feats[0].cpu().numpy().astype("float32")
+        norm = np.linalg.norm(vec)
+        return vec / norm if norm > 0 else vec
 
-    async def compute_similarity(self, embedding1: list, embedding2: list) -> float:
-        """Cosine similarity between two embeddings."""
-        raise NotImplementedError("CLIP service not yet implemented — Phase 2")
+    def _subject_match_sync(self, image: Image.Image, expected_subject: str) -> dict:
+        model, processor = _load_model()
+        if model is None:
+            return {"matches": False, "confidence": 0.0, "available": False}
+        import torch
 
-    async def match_to_catalog(self, image_bytes: bytes, catalog_embeddings: list) -> dict:
+        labels = [f"a photo of {expected_subject}", "a photo of something else"]
+        inputs = processor(text=labels, images=image, return_tensors="pt", padding=True)
+        with torch.no_grad():
+            outputs = model(**inputs)
+            probs = outputs.logits_per_image.softmax(dim=1)[0].cpu().numpy()
+        confidence = float(probs[0])
+        return {
+            "matches": confidence >= settings.clip_subject_match_threshold,
+            "confidence": confidence,
+            "available": True,
+        }
+
+    async def subject_match(self, image_url: str, expected_subject: str) -> dict:
         """
-        Find the closest matching product in the brand catalog.
-        Returns { productId, similarity_score }
+        Zero-shot subject match.
+        Returns { matches: bool, confidence: float, available: bool }.
+        On fetch/decode/model failure returns matches=False with available=False.
         """
-        raise NotImplementedError("CLIP service not yet implemented — Phase 2")
+        img_bytes = await try_fetch_image_bytes(image_url)
+        if img_bytes is None:
+            return {"matches": False, "confidence": 0.0, "available": False}
+        image = _open_image(img_bytes)
+        if image is None:
+            return {"matches": False, "confidence": 0.0, "available": False}
+        return await asyncio.to_thread(self._subject_match_sync, image, expected_subject)
+
+    async def visual_similarity(self, image_url: str, listing_image_urls: List[str]) -> dict:
+        """
+        Cosine similarity between the submitted image and each listing image.
+        Returns { max: float, avg: float, available: bool, compared: int }.
+        """
+        sub_bytes = await try_fetch_image_bytes(image_url)
+        if sub_bytes is None:
+            return {"max": 0.0, "avg": 0.0, "available": False, "compared": 0}
+        sub_img = _open_image(sub_bytes)
+        if sub_img is None:
+            return {"max": 0.0, "avg": 0.0, "available": False, "compared": 0}
+
+        sub_emb = await asyncio.to_thread(self._image_embedding_sync, sub_img)
+        if sub_emb is None:
+            return {"max": 0.0, "avg": 0.0, "available": False, "compared": 0}
+
+        sims: List[float] = []
+        for url in listing_image_urls or []:
+            ref_bytes = await try_fetch_image_bytes(url)
+            if ref_bytes is None:
+                continue
+            ref_img = _open_image(ref_bytes)
+            if ref_img is None:
+                continue
+            ref_emb = await asyncio.to_thread(self._image_embedding_sync, ref_img)
+            if ref_emb is None:
+                continue
+            sims.append(float(np.dot(sub_emb, ref_emb)))
+
+        if not sims:
+            return {"max": 0.0, "avg": 0.0, "available": False, "compared": 0}
+        return {
+            "max": max(sims),
+            "avg": sum(sims) / len(sims),
+            "available": True,
+            "compared": len(sims),
+        }
 
 
 clip_service = CLIPService()
