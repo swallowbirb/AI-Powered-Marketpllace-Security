@@ -42,6 +42,17 @@ const trustProfileSchema = new mongoose.Schema(
     bracketingFlag: { type: Boolean, default: false },
     wardrobingFlag: { type: Boolean, default: false },
     lastComputed: { type: Date, default: Date.now },
+    // Phase 3 additive: manually-injected fraud signals (via POST /:userId/signals).
+    // Append-only; readFraudSignals() counts hard/soft from here. Backward-compatible.
+    manualFraudSignals: {
+      type: [{
+        signal: String,
+        value: mongoose.Schema.Types.Mixed,
+        direction: { type: String, enum: ['positive', 'negative'], default: 'negative' },
+        addedAt: { type: Date, default: Date.now },
+      }],
+      default: [],
+    },
   },
   { timestamps: true }
 );
