@@ -18,6 +18,17 @@ const brandCatalogRoutes = require("./src/modules/brandCatalog/brandCatalogEntry
 const offerRoutes = require("./src/modules/offers/sellerOffer.routes");
 const devRoutes = require("./src/modules/dev/dev.routes");
 
+// Phase 0 — New module routes
+const returnsRoutes = require("./src/modules/returns/return.routes");
+const secondhandRoutes = require("./src/modules/secondhand/secondhand.routes");
+const gradingRoutes = require("./src/modules/grading/grading.routes");
+const routingRoutes = require("./src/modules/routing/routing.routes");
+const demandRoutes = require("./src/modules/demand/demand.routes");
+const healthCardRoutes = require("./src/modules/healthCard/healthCard.routes");
+const sustainabilityRoutes = require("./src/modules/sustainability/sustainability.routes");
+const trustRoutes = require("./src/modules/trust/trust.routes");
+const uploadsRoutes = require("./src/modules/uploads/uploads.routes");
+
 const app = express();
 
 // Database Connection
@@ -48,6 +59,17 @@ app.use("/api/brands", brandRoutes);
 app.use("/api/brand-catalog", brandCatalogRoutes);
 app.use("/api/offers", offerRoutes);
 app.use("/api/dev", devRoutes);
+
+// Phase 0 — New module routes
+app.use("/api/returns", returnsRoutes);
+app.use("/api/secondhand", secondhandRoutes);
+app.use("/api/grading", gradingRoutes);
+app.use("/api/routing", routingRoutes);
+app.use("/api/demand", demandRoutes);
+app.use("/api/health-card", healthCardRoutes);
+app.use("/api/sustainability", sustainabilityRoutes);
+app.use("/api/trust", trustRoutes);
+app.use("/api/uploads", uploadsRoutes);
 
 // Error Handler
 app.use(errorHandler);
