@@ -73,12 +73,11 @@ web_modules/
 .yarn-integrity
 
 # dotenv environment variable files
-# DO NOT REMOVE THESE COMMENTS!!!!!!!!!!!!!!!!!!!!!
-# .env
-# .env.development.local
-# .env.test.local
-# .env.production.local
-# .env.local
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -135,3 +134,5 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+backend/.env
+backend/.env
