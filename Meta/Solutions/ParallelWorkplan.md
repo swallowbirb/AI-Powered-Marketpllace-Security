@@ -1,229 +1,184 @@
-# Parallel Workplan — Team of 3
+# Parallel Workplan — Phase-Based Streams for Team of 2–3
 
-> Who does what, when, and what can happen simultaneously.
-> Based on the Implementation Plan phases. Names are role-based — assign as you like.
+> Maps the Implementation Plan's phases (P0–P9) into parallel streams.
+> Shows which phases can run simultaneously, which must wait, and who owns what.
 
 ---
 
-## Role Assignments
+## Phase Dependency Graph
 
-| Role | Focus | Primary Skills |
+```
+                    ┌──── P0 (Foundation) ────┐
+                    │   Everyone together     │
+                    └────────────┬────────────┘
+                                │
+              ┌─────────────────┼─────────────────┐
+              │                 │                  │
+              ▼                 ▼                  ▼
+     ┌────────────────┐ ┌────────────┐ ┌──────────────────┐
+     │ P1 — Dual      │ │ P2 — AI    │ │ P3 — Trust Score │
+     │ Intake Entry   │ │ Grading    │ │ & Fraud Defence  │
+     │ Points (UI +   │ │ Pipeline   │ │                  │
+     │ state machine) │ │ (FastAPI)  │ │                  │
+     └───────┬────────┘ └─────┬──────┘ └────────┬─────────┘
+              │                │                  │
+              │                ▼                  │
+              │   ┌────────────────────────┐      │
+              └──►│ P4 — Smart Routing     │◄─────┘
+                  │ (needs Grade + Trust   │
+                  │  + intake path)        │
+                  └───────────┬────────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              │               │               │
+              ▼               ▼               ▼
+     ┌────────────────┐ ┌──────────┐ ┌───────────────────┐
+     │ P5 — Resale    │ │ P6 —     │ │ P8 — Sustain-     │
+     │ Marketplace +  │ │ Demand   │ │ ability + Green    │
+     │ AI Listing +   │ │ Registry │ │ Credits + Donation │
+     │ Health Card    │ │ + Geo    │ │                    │
+     └────────────────┘ └──────────┘ └───────────────────┘
+              │               │               │
+              └───────────────┼───────────────┘
+                              │
+                    ┌─────────┴─────────┐
+                    │ P7 — Prevention   │  (independent — can start after P0)
+                    │ (Return model +   │
+                    │  Fit recs)        │
+                    └─────────┬─────────┘
+                              │
+                    ┌─────────┴─────────┐
+                    │ P9 — Demo Polish  │
+                    │ (needs everything │
+                    │  above working)   │
+                    └───────────────────┘
+```
+
+---
+
+## What Can Run in Parallel — Phase by Phase
+
+### LAYER 0: Must finish first (blocking everything)
+
+| Phase | Duration | Why it blocks |
 |---|---|---|
-| **Person A — Backend + AI** | FastAPI microservice, Bedrock integration, grading pipeline, trust score logic, routing engine | Python, boto3, OpenCV/CLIP, prompt engineering |
-| **Person B — Backend + Data** | Express API modules, MongoDB schemas, seed data, demand registry, sustainability/credits, Health Card signing | Node/Express, MongoDB/Mongoose, crypto |
-| **Person C — Frontend + Integration** | React UI for all flows, dynamic forms, marketplace storefront, routing visualisation, QR display, demo polish | React, UI/UX, API consumption |
+| **P0 — Foundation** | ~2 hours | AWS creds, Bedrock model access, S3 bucket, Atlas cluster, JSON contracts, seed data. Without these, nobody can write real code. |
 
-If you're only 2 people: merge B and C — one person handles Express + React (they share the same JS ecosystem), while the other handles the entire Python/AI side.
-
----
-
-## Timeline — 3 Sprints
-
-### Sprint 1: Foundation (first ~6 hours)
-
-Everyone works on their own track *simultaneously* after a 30-minute kickoff.
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  KICKOFF (30 min, together)                                  │
-│  • Create AWS account, apply credits                         │
-│  • Request Bedrock model access (Nova Pro + Claude)          │
-│  • Spin up MongoDB Atlas M0, get connection string           │
-│  • Create S3 bucket + configure CORS for browser uploads     │
-│  • Agree on the data contracts (Grade JSON, Trust JSON,      │
-│    Routing JSON, Listing JSON) — commit as .schema.json      │
-│    files so everyone codes against the same shapes           │
-└─────────────────────────────────────────────────────────────┘
-         │                    │                    │
-         ▼                    ▼                    ▼
-┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
-│ PERSON A          │ │ PERSON B          │ │ PERSON C          │
-│                   │ │                   │ │                   │
-│ Set up ml-service/│ │ Scaffold new      │ │ Returns flow UI:  │
-│ (FastAPI project) │ │ Express modules:  │ │ "Initiate Return" │
-│                   │ │ returns, grading, │ │ button on order   │
-│ Wire S3 upload    │ │ routing, demand,  │ │ page, reason form │
-│ helper (presigned │ │ secondhand,       │ │                   │
-│ URL generation)   │ │ health-card,      │ │ Sell-Used flow UI:│
-│                   │ │ sustainability,   │ │ "Sell Second-Hand"│
-│ Implement fraud   │ │ trust             │ │ page, pick from   │
-│ checks:           │ │                   │ │ past orders or    │
-│ • imagehash       │ │ Define Mongoose   │ │ search catalog    │
-│ • EXIF check      │ │ schemas + indexes │ │                   │
-│ • Rekognition     │ │ (2dsphere on      │ │ Generic evidence  │
-│   web-detect      │ │ demand.geo_point) │ │ upload form       │
-│                   │ │                   │ │ (placeholder for  │
-│ Implement OpenCV  │ │ Seed script:      │ │ Pass 1 dynamic    │
-│ blur + lighting   │ │ products, users,  │ │ form swap)        │
-│ check endpoint    │ │ orders, wants,    │ │                   │
-│                   │ │ NGOs for 2 cities │ │ Wire S3 presigned │
-│ Implement CLIP    │ │                   │ │ upload from       │
-│ subject-match     │ │ Trust Profile     │ │ browser           │
-│ endpoint          │ │ computation:      │ │                   │
-│                   │ │ query purchase    │ │                   │
-│                   │ │ history, return   │ │                   │
-│                   │ │ rate, account age │ │                   │
-│                   │ │ → tier output     │ │                   │
-└──────────────────┘ └──────────────────┘ └──────────────────┘
-```
-
-**Sprint 1 exit criteria:** Each person can demo their piece in isolation.
-- A: `POST /analyze` with a test image → returns fraud-check + blur + CLIP scores.
-- B: Seed runs clean; `POST /returns` creates a return record; trust profile endpoint returns a tier for a seeded user.
-- C: UI lets you start a return or sell-used flow, upload photos to S3, and shows the state machine visually.
+**Everyone does P0 together.** It's short. Split the tasks:
+- One person: AWS account + Bedrock access + S3 bucket + KMS key
+- One person: MongoDB Atlas + connection string + create indexes
+- One person: Commit JSON contract schemas + scaffold empty module folders
 
 ---
 
-### Sprint 2: Core AI + Routing (next ~8 hours)
+### LAYER 1: Three phases in parallel (no cross-dependencies)
 
-This is where the real magic happens. Dependencies from Sprint 1 are met, so
-the heavy integrations can proceed.
+Once P0 is done, these three phases have **zero dependencies on each other** and run simultaneously:
 
-```
-┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
-│ PERSON A          │ │ PERSON B          │ │ PERSON C          │
-│                   │ │                   │ │                   │
-│ GRADING PIPELINE: │ │ ROUTING ENGINE:   │ │ DYNAMIC FORM:     │
-│                   │ │                   │ │                   │
-│ Bedrock Pass 1 —  │ │ Reverse-logistics │ │ When Pass 1 JSON  │
-│ form generator.   │ │ cost calculator   │ │ arrives from API,  │
-│ Send reason +     │ │ (distance × rate) │ │ render it as a    │
-│ photos + prompts  │ │                   │ │ real React form    │
-│ to Nova Pro →     │ │ Candidate paths   │ │ with the specific │
-│ get JSON form     │ │ scoring functions │ │ photo-upload       │
-│ schema back.      │ │ (resell, donate,  │ │ fields the AI     │
-│                   │ │ liquidate, etc.)  │ │ asked for.         │
-│ Bedrock Pass 2 —  │ │                   │ │                   │
-│ grade synthesis.  │ │ Weighted scoring  │ │ PROGRESSIVE UX:   │
-│ Assemble parallel │ │ + hard gates      │ │ Show generic form  │
-│ analysis results  │ │ (hygiene, trust,  │ │ instantly, swap in │
-│ → send to Nova    │ │ seller-policy,    │ │ AI fields when     │
-│ Pro → Grade JSON. │ │ intake-path).     │ │ Pass 1 returns.    │
-│                   │ │                   │ │                   │
-│ Wire the full     │ │ $geoNear demand   │ │ PER-PHOTO FEEDBACK │
-│ pipeline end-to-  │ │ query → feeds     │ │ As user uploads    │
-│ end: fraud check  │ │ demand factor     │ │ each photo, call   │
-│ → Pass 1 → per-  │ │ into the score.   │ │ /validate-photo    │
-│ photo validate →  │ │                   │ │ → show inline      │
-│ parallel analysis │ │ OUTPUT: ranked    │ │ pass/fail.         │
-│ → Pass 2 → store. │ │ JSON with bars +  │ │                   │
-│                   │ │ rationale.        │ │ ROUTING VIZ:       │
-│ Rekognition +     │ │                   │ │ Horizontal bars    │
-│ Textract calls    │ │ DEMAND REGISTRY:  │ │ showing each       │
-│ wired inside the  │ │ "Notify me"       │ │ path's ₹ recovery. │
-│ parallel analysis │ │ endpoint + the    │ │ Winning path       │
-│ step.             │ │ match-on-list     │ │ highlighted +      │
-│                   │ │ worker that pings │ │ one-line rationale.│
-│                   │ │ nearby want-ers.  │ │                   │
-│                   │ │                   │ │ MARKETPLACE PAGE:  │
-│                   │ │ HEALTH CARD:      │ │ Browse listings    │
-│                   │ │ Hash the grade    │ │ with grade badge,  │
-│                   │ │ JSON, sign with   │ │ condition lane,    │
-│                   │ │ KMS Ed25519,      │ │ and QR code.       │
-│                   │ │ append to chain,  │ │                   │
-│                   │ │ generate QR URL.  │ │                   │
-└──────────────────┘ └──────────────────┘ └──────────────────┘
-```
+| Phase | Owner | What they're building | Needs from others |
+|---|---|---|---|
+| **P1 — Dual Intake** | Frontend person | Returns UI, Sell-Used UI, shared state machine, evidence upload shell | Only P0 outputs (S3 bucket, schemas) |
+| **P2 — AI Grading** | Python/AI person | Full hybrid pipeline: fraud checks → Pass 1 → photo validation → parallel analysis → Pass 2 → store grade | Only P0 outputs (S3, Bedrock access, schemas) |
+| **P3 — Trust Score** | Backend person | Trust profile computation from order/return history, tier assignment logic | Only P0 outputs (Atlas, seed data with user histories) |
 
-**Sprint 2 exit criteria:** The full happy-path works end-to-end for ONE persona.
-- Upload photos → get a real AI grade → see the routing bars → item appears on
-  the marketplace with a scannable QR Health Card.
+**Why these are parallel:** P1 builds the *entry point* that feeds data into the pipeline. P2 builds the *pipeline itself*. P3 builds the *context layer* that annotates the pipeline's input. None needs the other's output — they all consume the raw item record and user record from P0's schema.
+
+**Integration contract:** They agree on one interface: "When a return/sell-used is submitted, the item record contains `{user_id, product_id, reason, image_urls[], intake_path}`." That's all any of them needs to start.
 
 ---
 
-### Sprint 3: Extras + Demo Hardening (final ~6 hours)
+### LAYER 2: One phase, needs all three from Layer 1
 
-Everyone shifts from "build" to "complete + polish." Features divide cleanly.
+| Phase | Owner | What they're building | Needs from Layer 1 |
+|---|---|---|---|
+| **P4 — Smart Routing** | Backend person (or pair) | Weighted scoring engine, reverse-logistics cost calc, candidate paths, hard gates, rationale output | Grade JSON (from P2) + Trust Profile (from P3) + intake_path (from P1's state machine) |
 
-```
-┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
-│ PERSON A          │ │ PERSON B          │ │ PERSON C          │
-│                   │ │                   │ │                   │
-│ RETURN PREDICTION │ │ SUSTAINABILITY:   │ │ SELLER DASHBOARD: │
-│ Load pre-trained  │ │ CO2 factor table, │ │ Bulk view of all  │
-│ XGBoost .joblib,  │ │ per-disposition   │ │ returns, grades,  │
-│ expose /predict-  │ │ calculation,      │ │ routing outcomes,  │
-│ return endpoint.  │ │ user counter,     │ │ recovery summary. │
-│                   │ │ platform ticker.  │ │                   │
-│ SIZE/FIT REC:     │ │                   │ │ TRUST TIER VIZ:   │
-│ KNN over Misra    │ │ GREEN CREDITS:    │ │ Show different UX  │
-│ dataset, expose   │ │ Wallet table,     │ │ for Watch/Restrict │
-│ /fit-recommend.   │ │ earn on donate/   │ │ vs Verified users. │
-│                   │ │ resell, redeem at │ │                   │
-│ AI LISTING GEN:   │ │ checkout.         │ │ FIT REC on PDP:   │
-│ One Bedrock call  │ │                   │ │ "82% of similar    │
-│ → title + desc +  │ │ DONATION PATH:    │ │ customers prefer   │
-│ price suggestion. │ │ NGO match, tax    │ │ size 8."           │
-│                   │ │ receipt PDF gen   │ │                   │
-│ ERROR FALLBACKS:  │ │ (pdfkit or        │ │ RETURN-RISK NUDGE │
-│ If Bedrock is     │ │ puppeteer).       │ │ at checkout.       │
-│ slow/down, serve  │ │                   │ │                   │
-│ cached schemas    │ │ SEED REFRESH:     │ │ DEMO SCRIPTS:     │
-│ and degrade       │ │ Add demo personas │ │ Run all 4 personas│
-│ gracefully.       │ │ with pre-built    │ │ end-to-end. Fix   │
-│                   │ │ histories so      │ │ every rough edge.  │
-│                   │ │ trust tiers demo  │ │                   │
-│                   │ │ visibly.          │ │ QR SCAN PAGE:     │
-│                   │ │                   │ │ Public verify URL  │
-│                   │ │                   │ │ shows grade +      │
-│                   │ │                   │ │ chain + ✓ badge.   │
-└──────────────────┘ └──────────────────┘ └──────────────────┘
-```
+**This is the convergence point.** P4 is the first phase that combines outputs from all three Layer 1 streams. It's the "brain" — takes a graded item with a trust context and decides where it goes.
 
-**Sprint 3 exit criteria:** All four personas play cleanly. CO2 counter ticks.
-QR scans work. Seller dashboard shows batch recovery. Demo can be reset and
-re-run in 60 seconds.
+**Who builds it:** Ideally the Backend person who did P3 (they already have the trust tier logic and the routing-adjacent thinking). The Python/AI person is freed up for the parallel Layer 3 work below.
 
 ---
 
-## Dependency Map (What Blocks What)
+### LAYER 3: Four phases in parallel (after P4 exists)
 
-```
-Nothing blocks Sprint 1 — all three people work independently.
+Once routing decisions are flowing, these four phases are **independent of each other**:
 
-Sprint 2 dependencies:
-  Person A (grading) needs: S3 upload working (Sprint 1-A), schemas committed (Kickoff)
-  Person B (routing) needs: Grade JSON shape (Kickoff), demand seed data (Sprint 1-B)
-  Person C (dynamic form) needs: Pass 1 endpoint live (Sprint 2-A, but can stub with mock JSON)
+| Phase | Owner | What they're building | Needs from P4 |
+|---|---|---|---|
+| **P5 — Resale Marketplace + Listing Gen + Health Card** | Frontend + Backend collab | AI listing (Bedrock call), storefront UI, QR + Ed25519 signing, hash chain | Routing decision = "resell" → triggers listing gen |
+| **P6 — Demand Registry + Geo Matching** | Backend person | `wants` collection, $geoNear queries, notify-on-match | Routing engine calls demand count as an input (can stub initially), listed items trigger notify |
+| **P7 — Prevention (Return Model + Fit)** | Python/AI person | XGBoost endpoint, KNN fit rec, checkout nudge | **Actually independent of P4** — runs on the PDP/checkout, not the return flow. Can start after P0. |
+| **P8 — Sustainability + Green Credits + Donation** | Backend person | CO2 computation, credit ledger, NGO match, tax receipt | Routing decision = "donate" → triggers NGO match + receipt |
 
-Sprint 3 dependencies:
-  Person A (listing gen) needs: Grade JSON stored (Sprint 2-A)
-  Person B (sustainability) needs: Routing decisions emitting events (Sprint 2-B)
-  Person C (seller dashboard) needs: Multiple grades + routing results in DB (Sprint 2-A+B)
-```
-
-**The critical path is Person A's grading pipeline.** If that's running by mid-Sprint-2, everything else flows. If it's stuck, Person C stubs with hardcoded Grade JSONs to keep moving.
+**Key insight: P7 (Prevention) has NO dependency on P1–P4.** It lives on the *purchase* side, not the *return* side. You can start it any time after P0. If you have bandwidth in Layer 1, start P7 early.
 
 ---
 
-## Parallel Independence Summary
+### LAYER 4: Final phase (needs everything above)
 
-| Sprint | Person A | Person B | Person C | Blocking? |
+| Phase | Owner | What they're building | Needs |
+|---|---|---|---|
+| **P9 — Demo Polish** | Everyone together | Four persona scripts, trust-tier divergence demo, error fallbacks, seed refresh, rehearsal | All of the above working end-to-end |
+
+---
+
+## Visual Timeline (2–3 People)
+
+```
+TIME ──────────────────────────────────────────────────────────────►
+
+Hour 0─2     │ P0 (everyone together)
+             │
+Hour 2─8     │ ┌──────────┐  ┌──────────┐  ┌──────────┐
+             │ │ P1       │  │ P2       │  │ P3       │   ← ALL PARALLEL
+             │ │ (Frontend)│  │ (AI/Py)  │  │ (Backend)│
+             │ └──────────┘  └──────────┘  └──────────┘
+             │                    │               │
+             │            Also start P7 here if bandwidth ──┐
+             │                                              │
+Hour 8─12    │ ┌──────────────────────────────┐             │
+             │ │ P4 — Routing Engine          │             │
+             │ │ (Backend, or pair up)        │             │
+             │ └──────────────────────────────┘             │
+             │                                              │
+Hour 12─18   │ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐│
+             │ │ P5     │ │ P6     │ │ P8     │ │ P7     ││ ← ALL PARALLEL
+             │ │Listing │ │Demand  │ │Sustain │ │Prevent ││
+             │ │+Market │ │+Geo    │ │+Donate │ │+Fit    ││
+             │ └────────┘ └────────┘ └────────┘ └────────┘│
+             │                                              │
+Hour 18─20   │ ┌──────────────────────────────┐
+             │ │ P9 — Demo Polish (everyone)  │
+             │ └──────────────────────────────┘
+```
+
+---
+
+## Assignment for 3 People
+
+| Person | Layer 1 | Layer 2 | Layer 3 | Layer 4 |
 |---|---|---|---|---|
-| 1 | FastAPI + fraud + CV tools | Express modules + schemas + seed + trust | UI entry points + S3 upload | **No blocking** — all independent |
-| 2 | Full grading pipeline | Routing engine + demand + Health Card | Dynamic form + routing viz + marketplace | **Light dep:** C needs A's Pass-1 output (stub if needed) |
-| 3 | Return model + fit rec + listing gen | Sustainability + credits + donation + seed | Dashboard + demo scripts + polish | **No blocking** — all independent |
+| **Person A (Python/AI)** | P2 — Grading pipeline | Supports P4 (provides grade endpoint) | P7 — Prevention + P5's AI listing gen call | P9 |
+| **Person B (Node/Backend)** | P3 — Trust Score | P4 — Routing engine (lead) | P6 — Demand + P8 — Sustainability | P9 |
+| **Person C (Frontend)** | P1 — Dual Intake UI | P4 — Routing visualization UI | P5 — Marketplace page + Health Card QR display | P9 |
 
 ---
 
-## If You're Only 2 People
+## Assignment for 2 People
 
-Merge Person B + Person C into one "Full-stack JS" person:
+| Person | Layer 1 | Layer 2 | Layer 3 | Layer 4 |
+|---|---|---|---|---|
+| **Person A (Python/AI)** | P2 — Grading + start P7 early | Grade endpoint ready for P4 | P7 — Prevention + AI listing gen | P9 |
+| **Person B (Full-stack JS)** | P1 — UI + P3 — Trust | P4 — Routing (full: engine + viz) | P5 + P6 + P8 (marketplace, demand, sustainability) | P9 |
 
-- **Person 1 (Python/AI):** Everything in `ml-service/` — fraud checks, OpenCV, CLIP, Bedrock Pass 1 + 2, Rekognition, Textract, XGBoost, fit KNN, listing gen.
-- **Person 2 (Full-stack JS):** Express modules, React UI, MongoDB schemas, seed, trust score, routing engine, demand registry, Health Card signing, sustainability, green credits, donation, seller dashboard, demo polish.
-
-Person 2 has more surface area but each piece is smaller. Person 1 has fewer pieces but each one is deeper (prompt engineering, parallel async orchestration, model loading).
+Person B has more phases but they're all in the same language (Node + React + Mongo). Person A has fewer but deeper (Python orchestration, Bedrock prompts, model serving).
 
 ---
 
-## Quick "Am I Blocked?" Checklist
+## The Rules
 
-If you're stuck, check:
-1. Is Bedrock model access approved? (Do this in the FIRST 10 minutes.)
-2. Is the S3 bucket CORS-configured for browser uploads?
-3. Is the Atlas connection string in `.env`?
-4. Did you run the seed script so there's data to query?
-5. Are you coding against the agreed JSON contract shape or guessing?
-
-If any of those is "no," fix that before writing feature code.
+1. **Never start a Layer N+1 phase until its inputs from Layer N exist** — even if just as stubs returning hardcoded JSON.
+2. **P7 is the exception** — it has no upstream dependency beyond P0. Start it whenever you have slack.
+3. **The critical path is P2 (Grading).** If the Grade JSON isn't flowing by the end of Layer 1, P4 can't start. Mitigate: Person C stubs the grade with a hardcoded JSON to unblock the routing UI.
+4. **P9 is not optional.** A working demo that crashes mid-pitch is worse than a demo with fewer features that runs cleanly. Protect at least 2 hours for P9.
+5. **Communicate at layer boundaries.** When you finish your Layer 1 phase, announce it and verify the integration point works with the other streams before diving into Layer 2.
