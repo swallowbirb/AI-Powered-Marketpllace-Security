@@ -73,7 +73,14 @@ web_modules/
 .yarn-integrity
 
 # dotenv environment variable files
+# Ignore ALL .env files in any directory (root, backend/, frontend/, ml-service/, etc.)
+# but ALWAYS keep the committed templates (.env.example).
 .env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
 .env.development.local
 .env.test.local
 .env.production.local
@@ -134,6 +141,4 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
-backend/.env
-backend/.env
-backend/.env
+

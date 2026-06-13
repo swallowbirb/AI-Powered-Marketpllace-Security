@@ -1,7 +1,7 @@
 """
-Persona integration smoke tests (Task 2.13) — Pass-2 synthesis with a mocked Bedrock.
+Persona integration smoke tests (Task 2.13) — Pass-2 synthesis with a mocked Gemini.
 
-We mock the Bedrock client's invoke_json so the test runs without AWS/torch, while
+We mock the Gemini client's invoke_json so the test runs without AWS/torch, while
 still exercising the real prompt composition + grade coercion/validation path and
 asserting the persona expectations (Priya->C, Rahul->B, Anjali->A).
 
@@ -14,12 +14,12 @@ import asyncio
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.services import grade_synthesizer
-from app.services import bedrock as bedrock_module
+from app.services import gemini as gemini_module
 
 
-class _FakeBedrock:
+class _FakeGemini:
     """Returns a canned raw grade based on a tag embedded in the summary."""
-    _current_model = "amazon.nova-pro-v1:0"
+    _current_model = "gemini-2.5-flash"
 
     def __init__(self, raw):
         self._raw = raw
@@ -30,13 +30,13 @@ class _FakeBedrock:
 
 
 def _run_persona(raw, summary):
-    # Patch the module-level bedrock_service used by the synthesizer.
-    original = grade_synthesizer.bedrock_service
-    grade_synthesizer.bedrock_service = _FakeBedrock(raw)
+    # Patch the module-level gemini_service used by the synthesizer.
+    original = grade_synthesizer.gemini_service
+    grade_synthesizer.gemini_service = _FakeGemini(raw)
     try:
         return asyncio.run(grade_synthesizer.synthesize_grade(summary, category=summary.get("category")))
     finally:
-        grade_synthesizer.bedrock_service = original
+        grade_synthesizer.gemini_service = original
 
 
 def test_priya_worn_shoes_grade_c():

@@ -1,4 +1,4 @@
-"""Pure JSON-extraction helper (no AWS deps) — shared by the Bedrock client."""
+"""Pure JSON-extraction helper (no AWS deps) — shared by the Gemini client."""
 import json
 import re
 
