@@ -17,7 +17,7 @@ actually build for the demo, what we mock, what we drop.
 | Feature | Status | Why |
 |---|---|---|
 | Existing marketplace (browse / cart / orders) | **Build on** | Already half-built in the repo — extend, don't rewrite |
-| Dual intake: Returns flow + Sell-Used flow | **Build** | The whole pitch hinges on this |
+| D ual intake: Returns flow + Sell-Used flow | **Build** | The whole pitch hinges on this |
 | AI Grading hybrid pipeline (v1.43) | **Build** | Already specced — the technical centerpiece |
 | User Trust Score / Return-history layer | **Build** | High-impact fraud defence + great demo beat |
 | Smart Routing & Disposition Engine (live rationale) | **Build** | Single biggest "wow" moment |
