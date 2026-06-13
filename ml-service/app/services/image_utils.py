@@ -4,7 +4,15 @@ Image fetching helpers shared across the grading pipeline.
 Photos live in S3 and are passed around as URL strings. These helpers fetch the
 raw bytes (async, off the event loop) and parse S3 bucket/key out of an HTTPS URL
 so we can call the Rekognition/Textract S3Object APIs without re-uploading.
+
+Every fetch is instrumented: pass an optional ``trace`` (PipelineTrace) and the
+fetch result — success (bytes, content-type, latency) or the exact failure
+(timeout, 403, connection error) — is recorded as a developer-log step. This is
+the single most important diagnostic for "the model ran but got no image" bugs,
+which happen when an S3 URL is expired/forbidden and the failure is otherwise
+silently swallowed.
 """
+import time
 import asyncio
 import logging
 from typing import Optional, Tuple
@@ -19,6 +27,15 @@ class ImageFetchError(Exception):
     """Raised when an image URL cannot be retrieved or decoded."""
 
 
+def _short_url(url: str, keep: int = 80) -> str:
+    """Strip query string (presign noise) and truncate for readable logs."""
+    try:
+        base = url.split("?", 1)[0]
+        return base if len(base) <= keep else "…" + base[-(keep - 1):]
+    except Exception:  # noqa: BLE001
+        return str(url)[:keep]
+
+
 async def fetch_image_bytes(url: str, timeout: float = 10.0) -> bytes:
     """Fetch raw image bytes from an HTTP(S) URL. Raises ImageFetchError on failure."""
     try:
@@ -31,11 +48,65 @@ async def fetch_image_bytes(url: str, timeout: float = 10.0) -> bytes:
         raise ImageFetchError(f"Could not fetch image from {url}: {exc}") from exc
 
 
-async def try_fetch_image_bytes(url: str, timeout: float = 10.0) -> Optional[bytes]:
-    """Like fetch_image_bytes but returns None on failure instead of raising."""
+async def try_fetch_image_bytes(
+    url: str,
+    timeout: float = 10.0,
+    *,
+    trace=None,
+    phase: str = "request",
+    label: str = "image",
+) -> Optional[bytes]:
+    """
+    Like fetch_image_bytes but returns None on failure instead of raising.
+
+    When ``trace`` is provided, records a developer-log step for the fetch: on
+    success the byte size + latency, on failure the precise reason (HTTP status,
+    timeout, DNS/connection error). This converts every silent S3 fetch failure
+    into a visible, actionable log line.
+    """
+    started = time.perf_counter()
     try:
-        return await fetch_image_bytes(url, timeout=timeout)
-    except ImageFetchError:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            data = resp.content
+        elapsed = round((time.perf_counter() - started) * 1000, 1)
+        if trace is not None:
+            kb = round(len(data) / 1024, 1)
+            trace.add(
+                phase, "IMAGE_FETCH",
+                f"📥 Fetched {label}: {kb} KB ({resp.headers.get('content-type', 'unknown type')})",
+                level="success", duration_ms=elapsed,
+                url=_short_url(url), bytes=len(data),
+                content_type=resp.headers.get("content-type"),
+                http_status=resp.status_code,
+            )
+        return data
+    except httpx.HTTPStatusError as exc:
+        elapsed = round((time.perf_counter() - started) * 1000, 1)
+        status = exc.response.status_code if exc.response is not None else None
+        hint = ""
+        if status == 403:
+            hint = " — S3 returned 403 Forbidden (presigned URL expired or bucket policy)."
+        elif status == 404:
+            hint = " — S3 returned 404 (object missing / wrong key)."
+        if trace is not None:
+            trace.error(
+                phase, "IMAGE_FETCH",
+                f"❌ Could not fetch {label} (HTTP {status}){hint}",
+                exc=exc, duration_ms=elapsed, url=_short_url(url), http_status=status,
+            )
+        logger.warning("Failed to fetch image %s: %s", url, exc)
+        return None
+    except Exception as exc:  # noqa: BLE001
+        elapsed = round((time.perf_counter() - started) * 1000, 1)
+        if trace is not None:
+            trace.error(
+                phase, "IMAGE_FETCH",
+                f"❌ Could not fetch {label}: {type(exc).__name__} — the model will run WITHOUT this image.",
+                exc=exc, duration_ms=elapsed, url=_short_url(url),
+            )
+        logger.warning("Failed to fetch image %s: %s", url, exc)
         return None
 
 

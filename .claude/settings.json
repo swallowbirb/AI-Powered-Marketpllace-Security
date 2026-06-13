@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile app/services/trace.py app/services/image_utils.py app/services/bedrock.py app/services/fraud_preflight.py app/services/analysis_orchestrator.py app/services/grade_synthesizer.py app/services/form_generator.py app/routers/grading.py app/models/schemas.py)"
+    ]
+  }
+}

@@ -41,6 +41,10 @@ class GradingResponse(BaseModel):
     prompts: Dict[str, str] = {}
     fraud: Dict[str, Any] = {}
     status: str = "ok"              # ok | fraud_rejected | failed
+    # Developer-visibility trace: ordered, leveled, phased steps of the internal
+    # pipeline (image fetches, Bedrock attempts, vision calls). Ingested verbatim
+    # into the backend itemLogs stream / Developer Logs sidebar.
+    trace: List[Dict[str, Any]] = []
 
 
 # --- Vision ---
@@ -76,3 +80,4 @@ class FormResponse(BaseModel):
     status: str
     cached: bool
     key: str
+    trace: List[Dict[str, Any]] = []

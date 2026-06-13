@@ -78,6 +78,7 @@ async def generate_form(
     category: Optional[str] = None,
     initial_photos: Optional[List[str]] = None,
     listing_data: Optional[dict] = None,
+    trace=None,
 ) -> dict:
     """
     Generate (or serve from cache) a Form_Schema.
@@ -90,7 +91,15 @@ async def generate_form(
     # Cache hit -> skip Bedrock entirely (Req 3.3, 12.3).
     cached = _pass1_cache.get(key)
     if cached is not None:
+        if trace is not None:
+            trace.success("pass1", "PASS1_CACHE",
+                          f"⚡ Pass 1 cache HIT (key={key}) — skipping Bedrock entirely", cache_key=key)
         return {"schema": cached, "status": STATUS_CACHE, "cached": True, "key": key}
+
+    if trace is not None:
+        trace.info("pass1", "PASS1_START",
+                   f"📝 Pass 1 form generation: cache MISS (key={key}), composing prompt for "
+                   f"category={category or 'unknown'}", cache_key=key, category=category)
 
     # Compose the Pass-1 prompt.
     template = prompt_loader.load_template("pass1_form_generation.txt")
@@ -102,19 +111,37 @@ async def generate_form(
     prompt = prompt_loader.compose(category, body)
 
     # Optionally attach a couple of initial photos (multimodal) — best-effort.
+    requested = (initial_photos or [])[:3]
     images: List[bytes] = []
-    for url in (initial_photos or [])[:3]:
-        b = await try_fetch_image_bytes(url)
+    for idx, url in enumerate(requested):
+        b = await try_fetch_image_bytes(url, trace=trace, phase="pass1", label=f"Pass 1 initial photo #{idx + 1}")
         if b is not None:
             images.append(b)
 
+    if trace is not None and requested:
+        if len(images) < len(requested):
+            trace.warn("pass1", "PASS1_IMAGES",
+                       f"⚠️ Pass 1 attaching {len(images)}/{len(requested)} initial photo(s) — "
+                       f"{len(requested) - len(images)} failed to fetch (model sees fewer images).",
+                       requested=len(requested), attached=len(images))
+        else:
+            trace.info("pass1", "PASS1_IMAGES",
+                       f"🖼️ Pass 1 attaching {len(images)} initial photo(s) to the multimodal prompt",
+                       attached=len(images))
+
     try:
-        schema = await bedrock_service.invoke_json(prompt, images=images or None, max_tokens=1500)
+        schema = await bedrock_service.invoke_json(prompt, images=images or None, max_tokens=1500,
+                                                   trace=trace, phase="pass1", label="Pass 1 form generator")
         if not _is_valid_form_schema(schema):
             raise BedrockJSONError("Form schema failed shape validation")
         schema.setdefault("category", category or "generic")
         schema["generated"] = True
         _pass1_cache.set(key, schema)
+        if trace is not None:
+            field_count = len(schema.get("fields", []))
+            trace.success("pass1", "PASS1_COMPLETE",
+                          f"✅ Pass 1 generated a tailored {field_count}-field evidence form (cached for reuse)",
+                          field_count=field_count, status=STATUS_AI)
         return {"schema": schema, "status": STATUS_AI, "cached": False, "key": key}
 
     except (BedrockError, BedrockJSONError) as exc:
@@ -122,8 +149,17 @@ async def generate_form(
         # Degraded: serve cache if any (shouldn't be, we already checked), else generic.
         fallback_cached = _pass1_cache.get(key)
         if fallback_cached is not None:
+            if trace is not None:
+                trace.warn("pass1", "PASS1_FALLBACK",
+                           f"⚠️ Pass 1 Bedrock failed ({type(exc).__name__}); serving cached schema instead",
+                           status=STATUS_FALLBACK_CACHE)
             return {"schema": fallback_cached, "status": STATUS_FALLBACK_CACHE,
                     "cached": True, "key": key}
+        if trace is not None:
+            trace.warn("pass1", "PASS1_FALLBACK",
+                       f"⚠️ Pass 1 Bedrock failed ({type(exc).__name__}); serving the GENERIC default form. "
+                       "The user still gets a usable form, but it is not AI-tailored.",
+                       status=STATUS_FALLBACK_GENERIC)
         return {"schema": _generic_default_schema(category), "status": STATUS_FALLBACK_GENERIC,
                 "cached": False, "key": key}
 

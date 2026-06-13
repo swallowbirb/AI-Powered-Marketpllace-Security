@@ -1,10 +1,12 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Upload, X, CheckCircle2, Loader2, ImagePlus, ArrowRight } from 'lucide-react';
-import { uploadToS3, getPresignedUrl } from '../services/item.service';
+import { uploadToS3, getPresignedUrl, getItemStatus } from '../services/item.service';
 import { submitReturnEvidence } from '../services/return.service';
 import { submitSecondhandEvidence } from '../services/secondhand.service';
+import DeveloperLogsSidebar from '../components/shared/DeveloperLogsSidebar';
+import TrustTierBadge from '../components/shared/TrustTierBadge';
 
 // TODO: Phase 2 — replace this section with the dynamic Pass-1 form schema received from Bedrock
 
@@ -14,6 +16,15 @@ export default function ItemEvidencePage() {
   const navigate = useNavigate();
   const intakePath = location.state?.intakePath || 'return';
   const productTitle = location.state?.productTitle || 'Your item';
+
+  const [trustTier, setTrustTier] = useState(null);
+
+  useEffect(() => {
+    if (!itemId) return;
+    getItemStatus(itemId)
+      .then((res) => { if (res.success) setTrustTier(res.data.trustTier); })
+      .catch(() => {});
+  }, [itemId]);
 
   const [files, setFiles] = useState([]);
   const [previews, setPreviews] = useState([]);
@@ -74,7 +85,9 @@ export default function ItemEvidencePage() {
   const label = intakePath === 'sell-used' ? 'Sell Used' : 'Return';
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-10 font-sans">
+    <div className="flex">
+      <div className="flex-1 min-w-0">
+        <div className="max-w-2xl mx-auto px-4 py-10 font-sans">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -12 }}
@@ -92,6 +105,7 @@ export default function ItemEvidencePage() {
         <p className="text-sm text-gray-500 mt-1">
           Upload clear, well-lit photos showing the item's current condition. Minimum 1 photo required.
         </p>
+        {trustTier && <TrustTierBadge tier={trustTier} className="mt-3" />}
       </motion.div>
 
       {/* Drop zone */}
@@ -210,6 +224,10 @@ export default function ItemEvidencePage() {
           )}
         </motion.button>
       </div>
+        </div>
+      </div>
+
+      <DeveloperLogsSidebar itemId={itemId} />
     </div>
   );
 }

@@ -29,8 +29,10 @@ actually build for the demo, what we mock, what we drop.
 | Sustainability counter (CO2 / water saved) | **Build** | Trivial to compute, big narrative lever |
 | Green Credits ledger | **Build** | Light gamification on top of sustainability |
 | NGO/donation routing + tax receipt PDF | **Build** | Closes the Priya loop |
-| Return-probability model (XGBoost) | **Build** (offline-trained, served via FastAPI) | Pre-train, ship the saved model |
-| Size/fit recommendation (Misra dataset KNN) | **Build** | Cheap, demoable on the PDP |
+| Return Intelligence Knowledge Base (own returns/reviews) | **Build** | Self-owned data asset; fuels all prevention; one tiny doc/SKU |
+| Return-risk model (LightGBM + explainable scorecard, schema-matched) | **Build** (offline-trained, served via FastAPI) | Calibrated + explainable; scorecard is the fallback |
+| Fit/size intelligence (crowd-sourced from our returns + reviews) | **Build** | No body measurements; honest one-liner on the PDP |
+| Intervention engine (risk × trust → graduated nudge) | **Build** | Where prevention earns its keep; consumes Phase 3 trust |
 | Seller bulk dashboard | **Build** (light) | Closes the small-seller persona |
 | WhatsApp listing bot | **Stretch** | Twilio sandbox if time, demo via screen recording otherwise |
 | CLIP-based "find similar item" search | **Stretch** | Skip if Atlas Vector Search M0 single-index limit bites |
@@ -53,8 +55,8 @@ actually build for the demo, what we mock, what we drop.
    │       └──► [ FastAPI Python microservice ]
    │              • OpenCV, CLIP, imagehash, Pillow/EXIF
    │              • Boto3 → AWS Rekognition, Textract, Bedrock
-   │              • XGBoost return-probability model
-   │              • Size/fit KNN over Misra dataset
+   │              • LightGBM return-risk model (+ explainable scorecard)
+   │              • Fit/size intelligence from own returns + reviews (RIKB)
    │
    ├──► [ Amazon Bedrock ]   Nova Pro (primary), Claude 3.5 Sonnet (fallback)
    ├──► [ Amazon S3 ]        all uploaded photos
@@ -77,13 +79,14 @@ notice an Amazon model running an Amazon-themed demo.
 
 ```
 P0 ─► P1 ─► P2 ─► P3 ─┐
-                       ├─► P4 ─► P5 ─► P6 ─► P7 ─► P8 ─► P9
+                       ├─► P3.5 ─► P4 ─► P5 ─► P6 ─► P7 ─► P8 ─► P9
        Existing repo ──┘
 ```
 
 P0 unblocks everything. P1 is parallel UI work to P2 (grading) and P3 (trust)
-which can run in parallel after P0. P4 (routing) consumes outputs from P2 + P3.
-P5–P8 are largely independent and can be parallelised. P9 is polish & rehearsal.
+which can run in parallel after P0. P3.5 (integration & testing) wires the three
+parallel streams together with a frontend. P4 (routing) consumes outputs from 
+P2 + P3. P5–P8 are largely independent and can be parallelised. P9 is polish & rehearsal.
 
 ---
 
@@ -116,7 +119,7 @@ can clone the repo, get a `.env`, and run end-to-end placeholder calls.
 4. **Repo skeleton.** Add three new top-level workspaces alongside the existing
    `backend/`:
    - `ml-service/` — the new FastAPI microservice (vision tools + Bedrock
-     orchestration + return-probability model).
+     orchestration + LightGBM return-risk model).
    - Inside the existing `backend/src/modules/`, scaffold empty module folders
      for: `returns`, `secondhand`, `grading`, `routing`, `demand`, `health-card`,
      `sustainability`, `trust`. Mirrors the existing module-per-domain pattern.
@@ -322,6 +325,116 @@ behaves differently across tiers.
 
 ---
 
+## Phase 3.5 — Integration & End-to-End Testing
+
+**Goal:** Wire together P1 (Dual Intake), P2 (AI Grading), and P3 (Trust Score)
+into a working flow with a functional frontend so the team can test the complete
+pipeline before building the routing engine. This phase catches integration
+issues early and creates a stable foundation for P4.
+
+**What we do:**
+
+1. **Backend integration layer.** Create the orchestration endpoints that chain
+   the three independent modules together:
+   - POST `/api/returns/initiate` → creates item record (P1) → fetches trust
+     profile (P3) → returns merged response.
+   - POST `/api/secondhand/initiate` → same flow, different intake path.
+   - POST `/api/grading/start` → triggers the full P2 grading pipeline → stores
+     grade → updates item state → returns grade JSON with trust context.
+   - GET `/api/items/:id/status` → unified status endpoint showing intake path,
+     current state, trust tier, grade (if complete).
+   - GET `/api/items/:id/logs` → returns plain-English developer logs for debugging.
+
+2. **Developer logs system.** Build a real-time logging system that emits plain-
+   English logs at every step of the flow:
+   - `ItemLogger` utility logs each step ("🚀 Return initiated", "🤖 Calling Bedrock...",
+     "✅ Grade B assigned (78/100)")
+   - Logs persist in MongoDB `itemLogs` collection (auto-expire after 7 days)
+   - Collapsible sidebar on all return/secondhand pages shows logs in real-time
+   - Helps developers understand flow, debug issues, and see AI working live
+
+3. **Frontend scaffold.** Build the minimal React surfaces to drive the flow
+   end-to-end:
+   - **Returns initiation page** — form to submit a return with reason + initial
+     photos.
+   - **Sell-Used initiation page** — two tabs: "I bought it here" (order picker)
+     + "I bought it elsewhere" (manual entry).
+   - **Evidence collection page** — the shared surface from P1, now wired to the
+     grading API. Shows Pass-1 form schema when it arrives, handles photo
+     uploads to S3, displays real-time validation feedback. **Developer logs
+     sidebar shows each step in real-time.**
+   - **Status/Results page** — shows the item's current state, trust tier badge,
+     grade details (A/B/C/D + rationale + defects) when grading completes.
+     Placeholder for routing results (will populate in P4). **Developer logs
+     sidebar shows full flow history.**
+
+4. **Trust tier visibility.** Make trust tiers visible in the UI:
+   - Badge/indicator on the status page showing tier (Verified / Trusted /
+     Standard / Watch / Restricted).
+   - Conditional messaging based on tier (e.g., "Your return is fast-tracked" vs
+     "Additional verification required").
+4. **Trust tier visibility.** Make trust tiers visible in the UI:
+   - Badge/indicator on the status page showing tier (Verified / Trusted /
+     Standard / Watch / Restricted).
+   - Conditional messaging based on tier (e.g., "Your return is fast-tracked" vs
+     "Additional verification required").
+   - Different form fields or requirements based on trust tier (Phase 3's gating
+     logic now manifests visually).
+
+5. **Error handling & loading states.** Make the frontend production-ready:
+   - Loading spinners during API calls.
+   - Error boundaries for failed grading / trust computation.
+   - Retry logic for transient Bedrock / ML-service failures.
+   - Graceful degradation if FastAPI is down (show cached schema, text-only
+     fallback).
+   - **All errors logged to the developer logs sidebar for instant debugging.**
+
+6. **End-to-end smoke test.** Verify the complete flow works with real data:
+6. **End-to-end smoke test.** Verify the complete flow works with real data:
+   - Start a return → see trust tier computed → upload photos → see Pass-1 form
+     → fill it → submit → see Grade JSON returned → verify it persists in DB.
+   - Same flow for sell-used path.
+   - Test with multiple user histories (different trust tiers) to confirm gating
+     logic works.
+   - **Watch the developer logs sidebar show each step in plain English.**
+
+7. **Integration fixes.** Inevitably, things break when modules meet:
+   - Schema mismatches between P1/P2/P3 (fix the contracts).
+   - Missing MongoDB indexes causing slow queries (add them).
+   - CORS issues between frontend and backend (configure Express).
+   - S3 pre-signed URL expiry / permission issues (fix IAM policy).
+   - FastAPI → Express communication failures (verify endpoints, error handling).
+
+8. **Developer experience polish.**
+   - One `npm run dev` command starts both backend Express and frontend React.
+   - One `npm run seed` command resets the DB to a known demo state.
+   - README with "How to test the flow end-to-end" instructions.
+   - Postman / Thunder Client collection for the new endpoints.
+
+**Why this phase matters:**
+- **Catches contract mismatches early** — better to discover them now than
+  during P4 when routing complexity is added.
+- **Provides a testable artifact** — the team can show a working intake-to-grade
+  flow to stakeholders or judges even before routing exists.
+- **Developer logs = instant visibility** — see exactly where the flow breaks,
+  understand timing, debug fraud signals, watch AI working in real-time.
+- **Unblocks parallel P4 work** — once integration is clean, one person can
+  start building routing logic while another builds the routing UI, knowing the
+  upstream data is reliable.
+- **Reduces P9 risk** — fewer surprises during demo polish if integration was
+  tested early.
+
+**Done means:**
+- A user can initiate a return or sell-used listing via the frontend.
+- The system computes their trust tier and shows it.
+- Photos upload to S3, grading runs via FastAPI, Pass-1 form renders, Pass-2
+  grade appears on the status page.
+- **Developer logs sidebar shows plain-English logs for every step.**
+- The flow completes without manual intervention and persists correct data.
+- The team can reset and re-run the flow reliably.
+
+---
+
 ## Phase 4 — Smart Routing & Disposition Engine
 
 **Goal:** Take the Grade JSON (Phase 2) + the Trust Profile (Phase 3) + the
@@ -469,50 +582,97 @@ buyers get notified; the routing engine uses the count as a real input.
 
 ---
 
-## Phase 7 — Prevention Layer (Return Probability + Fit Recommendations)
+## Phase 7 — Prevention Intelligence Layer (the highest-leverage layer)
 
-**Goal:** "The most sustainable return is the one that never happens." Two
-features, both pre-purchase, both running on the existing PDP.
+**Goal:** "The most sustainable return is the one that never happens." Prevention
+is not a bolt-on feature — it is the compounding moat. Every grading, return, and
+review the platform processes feeds a knowledge base that makes the *next* purchase
+smarter. We build a **closed-loop system** that (a) learns return causes from our own
+data, (b) scores return risk before checkout with a calibrated, explainable model,
+(c) intervenes with friction sized to *who the buyer is*, and (d) feeds defect/fit
+signals back to sellers — all at near-zero marginal cost.
 
-**What we build:**
+**Why this is a redesign over the old "XGBoost-on-Kaggle + Misra-KNN" plan.**
+Our actual schema has no size variants, discount %, COD/prepaid flag, multi-item
+baskets, or body-measurement profiles. A model trained on a foreign dataset would
+have features that don't map to our data, and the Misra fit-KNN needs measurements
+we never collect — both were demo theatre. The new design uses **only data we already
+generate**: our own returns (clean `reasonCode` enum + free text), reviews, orders,
+and the trust profiles Phase 3 already computes. It is more honest, more defensible,
+and genuinely self-improving.
 
-1. **Return-probability model.** Standard XGBoost binary classifier, trained
-   *offline* on a Kaggle returns dataset (Misra ModCloth/RentTheRunway is the
-   strongest feasible choice; synthetic-Kaggle as a fallback). Features: order
-   value, category, discount %, payment method (especially COD-vs-prepaid for
-   the India angle), customer history, basket composition. Target real-world
-   AUC 0.72–0.75 — claim it honestly. The trained model ships as a `.joblib`
-   file inside the FastAPI service; Express calls a `/predict-return` endpoint
-   with a serialised cart at checkout.
+**What we build (six subsystems):**
 
-2. **What we do with the prediction.**
-   - **High-risk warning at checkout:** "8 of 10 customers with similar
-     baskets returned this combination — try size up?" Cheap CTA to reconfigure
-     the basket.
-   - **Cooling-off hold for impulse purchases:** If risk is very high *and*
-     trust profile is "Standard" or below, refund happens 24–48h after the
-     return is graded instead of instantly. Reduces frivolous returns without
-     punishing genuine users (their tier already gets instant refund).
-   - **Bracketing detection at cart time:** If the basket already contains
-     multi-size of the same SKU, surface the fit recommendation aggressively
-     and offer to reduce the basket.
+1. **Return Intelligence Knowledge Base (RIKB).** A compact `returnInsights`
+   aggregate — one small document per SKU, with a `(brand, category)` fallback for
+   cold items — rebuilt nightly from returns + reviews + orders. Per SKU: units
+   sold/returned, return rate, a reason histogram, the dominant reason, and a **fit
+   signal** (runs-small / true-to-size / runs-large + confidence) mined from return
+   free-text and review text. Cold start backs off to seeded category priors
+   (apparel ~28%, footwear ~20%, electronics ~8% — each cited). One tiny doc per
+   product fuels every other subsystem.
 
-3. **Size / fit recommendations.** Simple KNN over the Misra fit dataset:
-   given the user's measurement profile (collected once, gently), find similar
-   profiles for this brand+category and surface the modal "just right" size.
-   Surfaced as a one-liner on the PDP: *"82% of customers with your
-   measurements rated size 8 'just right' for this brand."* No deep learning,
-   no GPU, no training — just a group-by query.
+2. **Fit & Size Intelligence (no body measurements required).** From the RIKB fit
+   signal, the PDP shows an honest one-liner: *"Runs small — 7 of 10 shoppers who
+   returned this said it was too tight. Consider sizing up."* If the buyer previously
+   *kept* a same-brand item, we add a personalized hint (*"You took M in this brand
+   and kept it"*) — all from our own order/return history. This replaces the
+   infeasible Misra-KNN with something cheaper and more convincing because it's real
+   platform data.
 
-4. **Brand-side defects feedback.** When return reasons concentrate on a SKU
-   ("runs tight across shoulders" comes up repeatedly), surface that to the
-   seller dashboard — Amazon's "Fit Insights" feature, lighter weight. We
-   compute it nightly with a simple aggregation; an LLM summarises the cluster
-   into one sentence for the seller.
+3. **Return-Risk Scoring Engine (hybrid: ML + explainable scorecard).** A FastAPI
+   `/predict/return` endpoint scores risk from features we can actually compute at
+   checkout: the SKU's own return rate (RIKB), category prior, price band, condition,
+   the buyer's trust tier + return behaviour (consumed from Phase 3, never recomputed),
+   first-time-in-category, and a fit-mismatch flag. The model is **LightGBM** (smaller,
+   faster, cheaper than XGBoost) trained offline on a *schema-matched synthetic dataset*
+   so its features are identical to production, with **calibrated** probabilities so the
+   displayed percentage is honest. Running alongside it is a pure, explainable
+   **scorecard** (same pattern as Phase 3's trust scoring) that supplies the top-3
+   human-readable risk reasons *and* is the graceful fallback when the model is cold or
+   the ML service is down.
 
-**Done means:** The PDP shows a fit recommendation, checkout shows a return-
-risk nudge for risky baskets, and the seller dashboard shows aggregated
-return-reason clusters per SKU.
+4. **Intervention Engine.** A new `prevention/` backend module maps
+   (risk band × trust tier × context) to a graduated, configurable intervention — the
+   part that actually prevents returns:
+   - **PDP nudges:** fit verdict, "commonly returned for X," personalized size hint.
+   - **Checkout nudge:** a high-risk basket gets a *specific, actionable* CTA ("Runs
+     small — size up?"), never a hard block for genuine users.
+   - **Bracketing interception:** if the checkout intent has multiple sizes/units of
+     the same SKU, surface the fit recommendation aggressively and offer to drop the
+     extras.
+   - **Confidence boosters (inverse prevention):** for verified/trusted buyers we
+     *reduce* uncertainty (clear condition lane, Health Card, fit guarantee) so they
+     don't over-order to hedge — uncertainty is what drives bracketing.
+   - **Cooling-off / refund timing:** very-high risk + standard-or-lower trust → refund
+     issued 24–48 h after grading instead of instantly; verified/trusted users are
+     never delayed. (Coordinates with, doesn't duplicate, Phase 4's auto-refund gate.)
+
+5. **Seller-Side Defect & Fit Feedback.** The nightly RIKB job surfaces per-SKU
+   insights on the seller dashboard — return rate, dominant reason, fit verdict, and
+   **one LLM-summarised sentence** per significant complaint cluster (*"Buyers
+   consistently report this runs tight across the shoulders — consider updating the
+   size chart"*). The LLM call is batched nightly and cached, never per page view, so it
+   costs almost nothing. Fixing the listing prevents the *next* wave of returns.
+
+6. **The Closed Loop.** A nightly `prevention.recompute` job rebuilds the RIKB from the
+   latest data, so every prediction and nudge sharpens over time. Retraining LightGBM
+   from accumulated real labels is a documented roadmap step once volume justifies it;
+   the hackathon ships the loop wiring and the nightly recompute so "self-improving" is
+   real, not promised.
+
+**Cost & storage discipline (the binding constraint):** no GPU (LightGBM on CPU, a
+kilobytes-to-low-MB model file); no new managed services (reuse FastAPI + Atlas M0); the
+per-request path is one indexed Mongo read + a local model inference + pure scorecard
+math — no per-view LLM or vision calls; the only LLM use is the nightly, cached
+seller-summary batch; the RIKB stores bounded aggregates, not raw event history. The
+whole layer degrades to the scorecard if anything is unavailable.
+
+**Done means:** the PDP shows a data-backed fit/return note; checkout shows a calibrated,
+explainable risk nudge with a concrete CTA for risky baskets; bracketing is intercepted
+at the cart; refund timing respects the trust tier; the seller dashboard shows per-SKU
+return-reason clusters; and a nightly job demonstrably refreshes the knowledge base so
+the system improves with every return.
 
 ---
 
@@ -635,7 +795,10 @@ in under five minutes, every time.
 **Honest caveats for the pitch.**
 - Vision-LLM grading is probabilistic, not a calibrated industrial inspection.
   Pitch as "AI-assisted grading" with human review on low-confidence cases.
-- Return-prediction AUC ceiling is real; quote 0.72–0.75 honestly.
+- The return-risk model is trained on a schema-matched *synthetic* bootstrap, not
+  yet on real labels — say so. Quote AUC 0.72–0.78 on that synthetic set honestly,
+  and frame the explainable scorecard + nightly RIKB recompute as what makes it
+  trustworthy and self-improving today. Real-label retraining is the roadmap step.
 - Crypto signatures verify the *digital record*, not the physical product —
   a determined fraudster can attach a valid QR to a fake item. Combine with
   the trust score and the photo evidence to mitigate; mention the limitation

@@ -111,7 +111,8 @@ def classify(any_phash_match: bool, any_exif_camera: bool, any_web_match: bool):
     return CLASSIFICATION_CLEAN, None
 
 
-async def run_preflight(image_urls: List[str], catalog_hashes: Optional[List[str]] = None) -> dict:
+async def run_preflight(image_urls: List[str], catalog_hashes: Optional[List[str]] = None,
+                        trace=None) -> dict:
     """
     Run all three pre-flight checks across the submitted photos.
 
@@ -130,15 +131,24 @@ async def run_preflight(image_urls: List[str], catalog_hashes: Optional[List[str
 
     from app.services.image_utils import try_fetch_image_bytes
 
+    if trace is not None:
+        trace.info("fraud", "FRAUD_PREFLIGHT",
+                   f"🛡️ Fraud preflight: checking {len(image_urls or [])} photo(s) "
+                   f"against {len(catalog_hashes)} catalog hash(es) "
+                   "(perceptual-hash, EXIF camera data, Rekognition moderation)")
+
     any_phash_match = False
     any_exif_camera = False
     any_web_match = False
+    fetched = 0
 
-    for url in image_urls or []:
-        img_bytes = await try_fetch_image_bytes(url)
+    for idx, url in enumerate(image_urls or []):
+        img_bytes = await try_fetch_image_bytes(
+            url, trace=trace, phase="fraud", label=f"fraud photo #{idx + 1}")
         if img_bytes is None:
             notes.append(f"could not fetch {url} for fraud preflight")
             continue
+        fetched += 1
 
         # 1. perceptual hash vs catalog
         if phash_match(img_bytes, catalog_hashes):
@@ -154,6 +164,21 @@ async def run_preflight(image_urls: List[str], catalog_hashes: Optional[List[str
 
     # Classify. Hard signal short-circuits.
     classification, triggering = classify(any_phash_match, any_exif_camera, any_web_match)
+
+    if trace is not None:
+        level = "error" if classification == CLASSIFICATION_HARD else (
+            "warn" if classification == CLASSIFICATION_SOFT else "success")
+        if classification == CLASSIFICATION_CLEAN:
+            msg = f"✅ Fraud preflight CLEAN — no signals across {fetched} photo(s)"
+        else:
+            msg = (f"⚠️ Fraud preflight {classification} — triggering signal: {triggering}"
+                   + (" (HARD signal short-circuits grading)"
+                      if classification == CLASSIFICATION_HARD else ""))
+        trace.add("fraud", "FRAUD_RESULT", msg, level=level,
+                  classification=classification, triggering_signal=triggering,
+                  phash_match=any_phash_match, exif_has_camera_data=any_exif_camera,
+                  rekognition_web_match=any_web_match, photos_fetched=fetched,
+                  notes=notes or None)
 
     return {
         "phash_match": any_phash_match,

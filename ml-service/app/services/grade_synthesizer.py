@@ -26,6 +26,7 @@ async def synthesize_grade(
     analysis_summary: Dict[str, Any],
     category: Optional[str] = None,
     pass1_model: Optional[str] = None,
+    trace=None,
 ) -> Dict[str, Any]:
     """
     Run Pass 2. Returns a dict with the validated Grade JSON fields plus modelVersions
@@ -35,14 +36,28 @@ async def synthesize_grade(
     body = template.format(analysis_summary=json.dumps(analysis_summary, ensure_ascii=False, indent=2))
     prompt = prompt_loader.compose(category, body)
 
+    if trace is not None:
+        trace.info("pass2", "PASS2_PROMPT",
+                   f"📝 Pass 2 prompt composed ({len(prompt)} chars, category={category or 'generic'}). "
+                   "Sending the TEXT analysis summary only (no raw images) to Bedrock.",
+                   prompt_chars=len(prompt), category=category)
+
     try:
-        raw = await bedrock_service.invoke_json(prompt, images=None, max_tokens=2000)
+        raw = await bedrock_service.invoke_json(prompt, images=None, max_tokens=2000,
+                                                trace=trace, phase="pass2", label="Pass 2 grade synthesizer")
     except (BedrockError, BedrockJSONError) as exc:
+        # The detailed per-attempt error was already traced inside bedrock_service.
+        if trace is not None:
+            trace.error("pass2", "PASS2_FAILED",
+                        f"❌ Pass 2 grade synthesis failed — {type(exc).__name__}: {exc}", exc=exc)
         raise GradeSynthesisError(f"Bedrock Pass-2 failed: {exc}") from exc
 
     try:
         grade = coerce_and_validate(raw, analysis_summary)
     except GradeValidationError as exc:
+        if trace is not None:
+            trace.error("pass2", "PASS2_VALIDATION",
+                        f"❌ Pass 2 returned JSON that failed grade validation: {exc}", exc=exc, raw=raw)
         raise GradeSynthesisError(str(exc)) from exc
     used_pass2_model = getattr(bedrock_service, "_current_model", settings.bedrock_model_primary)
     grade["modelVersions"] = {
@@ -51,4 +66,14 @@ async def synthesize_grade(
         "rekognitionVersion": REKOGNITION_VERSION,
     }
     grade["_prompt"] = prompt
+
+    if trace is not None:
+        trace.success("pass2", "PASS2_GRADE",
+                      f"🎯 Pass 2 synthesized Grade {grade.get('grade')} "
+                      f"({grade.get('qualityScore')}/100, confidence={grade.get('confidence')}, "
+                      f"routing={grade.get('routingHint')}) using {used_pass2_model}",
+                      grade=grade.get("grade"), quality_score=grade.get("qualityScore"),
+                      confidence=grade.get("confidence"), routing_hint=grade.get("routingHint"),
+                      pass2_model=used_pass2_model)
+
     return grade

@@ -5,6 +5,16 @@ export const getItemById = async (itemId) => {
   return response.data;
 };
 
+export const getItemStatus = async (itemId) => {
+  const response = await api.get(`/items/${itemId}/status`);
+  return response.data;
+};
+
+export const getItemLogs = async (itemId) => {
+  const response = await api.get(`/items/${itemId}/logs`);
+  return response.data;
+};
+
 export const getMyItems = async () => {
   const response = await api.get('/items/my');
   return response.data;
