@@ -23,6 +23,9 @@ import NewOfferPage from './pages/NewOfferPage';
 import CatalogEntryDetailPage from './pages/CatalogEntryDetailPage';
 import BuyerOrdersPage from './pages/BuyerOrdersPage';
 import BrandStorePage from './pages/BrandStorePage';
+import SellSecondhandPage from './pages/SellSecondhandPage';
+import ItemEvidencePage from './pages/ItemEvidencePage';
+import ItemStatusPage from './pages/ItemStatusPage';
 
 // ─── Role Guards ────────────────────────────────────────────────────────────
 
@@ -152,6 +155,18 @@ function App() {
               <Route
                 path="/orders"
                 element={<CustomSignedIn><MarketplaceLayout><BuyerOrdersPage /></MarketplaceLayout></CustomSignedIn>}
+              />
+              <Route
+                path="/sell-secondhand"
+                element={<CustomSignedIn><MarketplaceLayout><SellSecondhandPage /></MarketplaceLayout></CustomSignedIn>}
+              />
+              <Route
+                path="/items/:itemId/evidence"
+                element={<CustomSignedIn><MarketplaceLayout><ItemEvidencePage /></MarketplaceLayout></CustomSignedIn>}
+              />
+              <Route
+                path="/items/:itemId/status"
+                element={<CustomSignedIn><MarketplaceLayout><ItemStatusPage /></MarketplaceLayout></CustomSignedIn>}
               />
 
               {/* Seller routes */}

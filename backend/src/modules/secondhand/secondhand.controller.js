@@ -1,27 +1,51 @@
 const secondhandService = require('./secondhand.service');
 
-const createDraft = async (req, res, next) => {
+const initiateFromOrder = async (req, res, next) => {
   try {
-    res.status(501).json({ success: false, message: 'Not implemented' });
-  } catch (error) {
-    next(error);
+    const userId = req.user._id;
+    const { orderId, description, askingPrice } = req.body;
+    const result = await secondhandService.initiateFromOrder(userId, { orderId, description, askingPrice });
+    res.status(201).json({ success: true, data: result });
+  } catch (err) {
+    if (['Order not found or not eligible', 'A sell-used listing already exists for this order'].includes(err.message)) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+    next(err);
   }
 };
 
-const submitItem = async (req, res, next) => {
+const submitEvidence = async (req, res, next) => {
   try {
-    res.status(501).json({ success: false, message: 'Not implemented' });
-  } catch (error) {
-    next(error);
+    const { photos } = req.body;
+    if (!photos || !Array.isArray(photos) || photos.length === 0) {
+      return res.status(400).json({ success: false, message: 'At least one photo is required' });
+    }
+    const item = await secondhandService.submitEvidence(req.user._id, req.params.itemId, photos);
+    res.status(200).json({ success: true, data: { itemId: item._id, status: item.status } });
+  } catch (err) {
+    if (err.message === 'Forbidden') return res.status(403).json({ success: false, message: 'Forbidden' });
+    next(err);
   }
 };
 
-const getItem = async (req, res, next) => {
+const getMyListings = async (req, res, next) => {
   try {
-    res.status(501).json({ success: false, message: 'Not implemented' });
-  } catch (error) {
-    next(error);
+    const listings = await secondhandService.getListingsByUser(req.user._id);
+    res.status(200).json({ success: true, data: listings });
+  } catch (err) {
+    next(err);
   }
 };
 
-module.exports = { createDraft, submitItem, getItem };
+const getListing = async (req, res, next) => {
+  try {
+    const record = await secondhandService.getListingById(req.params.id, req.user._id);
+    if (!record) return res.status(404).json({ success: false, message: 'Not found' });
+    res.status(200).json({ success: true, data: record });
+  } catch (err) {
+    if (err.message === 'Forbidden') return res.status(403).json({ success: false, message: 'Forbidden' });
+    next(err);
+  }
+};
+
+module.exports = { initiateFromOrder, submitEvidence, getMyListings, getListing };
