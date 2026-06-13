@@ -11,7 +11,6 @@ const getAllProducts = async (filters = {}, page = 1, limit = 20) => {
   const query = {};
 
   if (filters.status) query.status = filters.status;
-  if (filters.riskLevel) query.riskLevel = filters.riskLevel;
   if (filters.category) query.category = new RegExp(filters.category, 'i');
   if (filters.banned !== undefined) query.banned = filters.banned === 'true' || filters.banned === true;
   if (filters.suspended !== undefined) query.suspended = filters.suspended === 'true' || filters.suspended === true;
@@ -26,7 +25,7 @@ const getAllProducts = async (filters = {}, page = 1, limit = 20) => {
 
   const [products, total] = await Promise.all([
     Product.find(query)
-      .populate('sellerId', 'firstName lastName email sellerRS riskLevel banned suspended')
+      .populate('sellerId', 'firstName lastName email banned suspended')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -67,7 +66,6 @@ const updateProductModeration = async (productId, flags) => {
 const getAllSellers = async (filters = {}, page = 1, limit = 20) => {
   const query = { role: 'seller' };
 
-  if (filters.riskLevel) query.riskLevel = filters.riskLevel;
   if (filters.banned !== undefined) query.banned = filters.banned === 'true' || filters.banned === true;
   if (filters.suspended !== undefined) query.suspended = filters.suspended === 'true' || filters.suspended === true;
   if (filters.search) {
@@ -140,7 +138,6 @@ const getDashboardStats = async () => {
   const [
     totalProducts,
     productsByStatus,
-    productsByRiskLevel,
     totalSellers,
     bannedProducts,
     suspendedProducts,
@@ -151,10 +148,6 @@ const getDashboardStats = async () => {
     Product.aggregate([
       { $group: { _id: '$status', count: { $sum: 1 } } },
     ]),
-    Product.aggregate([
-      { $match: { riskLevel: { $ne: null } } },
-      { $group: { _id: '$riskLevel', count: { $sum: 1 } } },
-    ]),
     User.countDocuments({ role: 'seller' }),
     Product.countDocuments({ banned: true }),
     Product.countDocuments({ suspended: true }),
@@ -162,18 +155,13 @@ const getDashboardStats = async () => {
     User.countDocuments({ role: 'seller', suspended: true }),
   ]);
 
-  // Reshape status array into an object
-  const statusMap = { pending_review: 0, pending: 0, published: 0, approved: 0, flagged: 0, rejected: 0 };
+  const statusMap = { pending: 0, published: 0, approved: 0, flagged: 0, rejected: 0 };
   productsByStatus.forEach((s) => { if (statusMap[s._id] !== undefined) statusMap[s._id] = s.count; });
-
-  const riskMap = { low: 0, medium: 0, high: 0 };
-  productsByRiskLevel.forEach((r) => { if (riskMap[r._id] !== undefined) riskMap[r._id] = r.count; });
 
   return {
     products: {
       total: totalProducts,
       byStatus: statusMap,
-      byRiskLevel: riskMap,
       banned: bannedProducts,
       suspended: suspendedProducts,
     },
@@ -192,7 +180,6 @@ const getAllReviews = async (filters = {}, page = 1, limit = 20) => {
   const query = {};
 
   if (filters.isFlagged !== undefined) query.isFlagged = filters.isFlagged === 'true' || filters.isFlagged === true;
-  if (filters.riskLevel) query.riskLevel = filters.riskLevel;
   if (filters.isRemoved !== undefined) query.isRemoved = filters.isRemoved === 'true' || filters.isRemoved === true;
   if (filters.productId) query.productId = filters.productId;
   if (filters.sellerId) query.sellerId = filters.sellerId;

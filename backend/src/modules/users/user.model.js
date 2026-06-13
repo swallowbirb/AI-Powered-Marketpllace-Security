@@ -44,7 +44,7 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
-    // Timestamp of last activity — for graph temporal analysis
+    // Timestamp of last activity
     lastActiveAt: {
       type: Date,
     },
@@ -56,20 +56,6 @@ const userSchema = new mongoose.Schema(
     },
     avatarUrl: {
       type: String,
-    },
-    // Risk Score — to be assigned by AI in Phase 3 (null until then)
-    sellerRS: {
-      type: Number,
-      default: null,
-      min: 0,
-      max: 100,
-    },
-    // Derived from sellerRS thresholds: 0-39=low, 40-69=medium, 70-100=high
-    riskLevel: {
-      type: String,
-      enum: ['low', 'medium', 'high', null],
-      default: null,
-      index: true,
     },
     // Hard block — seller is completely disabled
     banned: {

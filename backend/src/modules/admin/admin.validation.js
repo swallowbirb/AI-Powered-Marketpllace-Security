@@ -1,7 +1,6 @@
 const mongoose = require('mongoose');
 
-const ALLOWED_PRODUCT_STATUSES = ['pending_review', 'pending', 'published', 'approved', 'flagged', 'rejected'];
-const ALLOWED_RISK_LEVELS = ['low', 'medium', 'high'];
+const ALLOWED_PRODUCT_STATUSES = ['pending', 'published', 'approved', 'flagged', 'rejected'];
 
 const validateObjectId = (id, label = 'ID') => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -14,7 +13,7 @@ const validateObjectId = (id, label = 'ID') => {
  * Validates query params for GET /admin/products and GET /admin/sellers
  */
 const validateListQuery = (req, res, next) => {
-  const { page, limit, riskLevel, status } = req.query;
+  const { page, limit, status } = req.query;
   const errors = [];
 
   if (page !== undefined && (isNaN(Number(page)) || Number(page) < 1)) {
@@ -23,10 +22,6 @@ const validateListQuery = (req, res, next) => {
 
   if (limit !== undefined && (isNaN(Number(limit)) || Number(limit) < 1)) {
     errors.push('limit must be a positive integer');
-  }
-
-  if (riskLevel !== undefined && !ALLOWED_RISK_LEVELS.includes(riskLevel)) {
-    errors.push(`riskLevel must be one of: ${ALLOWED_RISK_LEVELS.join(', ')}`);
   }
 
   if (status !== undefined && !ALLOWED_PRODUCT_STATUSES.includes(status)) {

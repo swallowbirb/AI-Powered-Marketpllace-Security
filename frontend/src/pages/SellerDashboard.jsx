@@ -404,17 +404,12 @@ const SellerDashboard = () => {
                             <StatusBadge status={product.status} />
                             {product.status === 'flagged' && (
                               <p className="text-[10px] text-rose-500/70 mt-1.5 max-w-[150px] leading-tight font-medium">
-                                Flagged for manual review. Low similarity with official brand catalog detected.
-                              </p>
-                            )}
-                            {product.status === 'pending_review' && (
-                              <p className="text-[10px] text-amber-500/70 mt-1.5 max-w-[150px] leading-tight">
-                                AI is currently analyzing this listing.
+                                Flagged for manual review.
                               </p>
                             )}
                             {product.status === 'suspended' && (
                               <p className="text-[10px] text-red-500/70 mt-1.5 max-w-[150px] leading-tight font-medium">
-                                Suspended due to severe policy violations or high counterfeit risk.
+                                Suspended due to policy violations.
                               </p>
                             )}
                           </td>
@@ -583,8 +578,7 @@ const SellerDashboard = () => {
                 <div>
                   <p className="text-sm font-semibold text-[#FF9900]">Brand Authorization</p>
                   <p className="text-xs text-zinc-400 mt-0.5 leading-relaxed">
-                    Request enrollment from a registered brand to become an authorized reseller. 
-                    Approved sellers can list brand products without triggering the AI counterfeit honeypot. 
+                    Request enrollment from a registered brand to become an authorized reseller.
                     Brand owners review and approve requests manually.
                   </p>
                 </div>

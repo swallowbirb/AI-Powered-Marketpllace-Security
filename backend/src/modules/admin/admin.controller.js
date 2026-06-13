@@ -2,8 +2,8 @@ const adminService = require('./admin.service');
 
 const getProducts = async (req, res, next) => {
   try {
-    const { status, riskLevel, category, banned, suspended, search, page = 1, limit = 20 } = req.query;
-    const filters = { status, riskLevel, category, banned, suspended, search };
+    const { status, category, banned, suspended, search, page = 1, limit = 20 } = req.query;
+    const filters = { status, category, banned, suspended, search };
 
     const result = await adminService.getAllProducts(filters, Number(page), Number(limit));
 
@@ -49,8 +49,8 @@ const updateProductModeration = async (req, res, next) => {
 
 const getSellers = async (req, res, next) => {
   try {
-    const { riskLevel, banned, suspended, search, page = 1, limit = 20 } = req.query;
-    const filters = { riskLevel, banned, suspended, search };
+    const { banned, suspended, search, page = 1, limit = 20 } = req.query;
+    const filters = { banned, suspended, search };
 
     const result = await adminService.getAllSellers(filters, Number(page), Number(limit));
 
@@ -98,8 +98,8 @@ const getDashboardStats = async (req, res, next) => {
 
 const getReviews = async (req, res, next) => {
   try {
-    const { isFlagged, riskLevel, isRemoved, productId, sellerId, page = 1, limit = 20 } = req.query;
-    const filters = { isFlagged, riskLevel, isRemoved, productId, sellerId };
+    const { isFlagged, isRemoved, productId, sellerId, page = 1, limit = 20 } = req.query;
+    const filters = { isFlagged, isRemoved, productId, sellerId };
 
     const result = await adminService.getAllReviews(filters, Number(page), Number(limit));
     res.status(200).json({ success: true, data: result });

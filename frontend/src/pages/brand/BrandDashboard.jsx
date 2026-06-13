@@ -3,21 +3,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import {
   getMyBrand, createBrand, getEnrolledSellers,
-  getPendingEnrollments, updateEnrollmentStatus, getFlaggedProducts
+  getPendingEnrollments, updateEnrollmentStatus
 } from '../../services/brand.service';
 import { getMyCatalogEntries, createCatalogEntry, updateCatalogEntry, deleteCatalogEntry } from '../../services/catalogEntry.service';
 import StarRating from '../../components/shared/StarRating';
 import {
   Shield, Plus, Users, Package, Clock, CheckCircle, XCircle,
   Loader2, Store, AlertTriangle, BookOpen, X, Edit2, Trash2,
-  Tag, ChevronDown, ChevronUp, Sparkles, Image as ImageIcon,
+  Tag, ChevronDown, ChevronUp, Image as ImageIcon,
 } from 'lucide-react';
-
-const RISK_COLORS = {
-  low: 'bg-green-100 text-green-700 border-green-200',
-  medium: 'bg-amber-100 text-amber-700 border-amber-200',
-  high: 'bg-red-100 text-red-700 border-red-200',
-};
 
 // ─── Catalog Entry Modal ──────────────────────────────────────────────────────
 function CatalogEntryModal({ entry, onClose, onSave }) {
@@ -123,7 +117,7 @@ function CatalogEntryModal({ entry, onClose, onSave }) {
             <textarea
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              placeholder="Authoritative product description. Phase 4 AI will compare seller listings against this text."
+              placeholder="Official product description."
               required
               rows={3}
               className="w-full bg-black/50 border border-zinc-800 rounded-xl px-3 py-2.5 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-[#FF9900]/40 focus:border-[#FF9900] transition-all text-sm resize-none"
@@ -156,7 +150,7 @@ function CatalogEntryModal({ entry, onClose, onSave }) {
               rows={3}
               className="w-full bg-black/50 border border-zinc-800 rounded-xl px-3 py-2.5 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-[#FF9900]/40 focus:border-[#FF9900] transition-all text-sm resize-none font-mono"
             />
-            <p className="text-xs text-zinc-600 mt-1">These are the AI fingerprint — Phase 4 will use these to detect counterfeit product images.</p>
+            <p className="text-xs text-zinc-600 mt-1">These are the official product images for this catalog entry.</p>
           </div>
 
           <div>
@@ -168,18 +162,6 @@ function CatalogEntryModal({ entry, onClose, onSave }) {
               placeholder="running, white, men, casual"
               className="w-full bg-black/50 border border-zinc-800 rounded-xl px-3 py-2.5 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-[#FF9900]/40 focus:border-[#FF9900] transition-all text-sm"
             />
-          </div>
-
-          {/* AI Preview Banner */}
-          <div className="bg-gradient-to-r from-violet-500/5 to-blue-500/5 border border-violet-500/20 rounded-xl p-4 flex items-start gap-3">
-            <Sparkles className="w-4 h-4 text-violet-400 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-xs font-semibold text-violet-300">Phase 4 AI Hooks Ready</p>
-              <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
-                Once saved, any seller product claiming your brand name will be automatically cross-referenced against
-                this entry's description and images. Similarity scores below threshold will flag the listing for review.
-              </p>
-            </div>
           </div>
 
           <div className="flex gap-3 pt-2">
@@ -335,7 +317,6 @@ export default function BrandDashboard() {
   const [sellers, setSellers] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
   const [catalogEntries, setCatalogEntries] = useState([]);
-  const [flaggedProducts, setFlaggedProducts] = useState([]);
   const [activeTab, setActiveTab] = useState('sellers');
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
@@ -386,14 +367,12 @@ export default function BrandDashboard() {
   };
 
   const loadBrandData = async (brandId) => {
-    const [sellersRes, enrollmentsRes, flaggedRes] = await Promise.all([
+    const [sellersRes, enrollmentsRes] = await Promise.all([
       getEnrolledSellers(brandId),
       getPendingEnrollments(brandId),
-      getFlaggedProducts(brandId),
     ]);
     if (sellersRes.success) setSellers(sellersRes.data);
     if (enrollmentsRes.success) setEnrollments(enrollmentsRes.data);
-    if (flaggedRes.success) setFlaggedProducts(flaggedRes.data);
   };
 
   const handleCreateBrand = async (e) => {
@@ -520,7 +499,6 @@ export default function BrandDashboard() {
     { id: 'sellers', label: 'Enrolled Sellers', icon: Users, count: sellers.length },
     { id: 'requests', label: 'Enrollment Requests', icon: Clock, count: enrollments.length },
     { id: 'catalog', label: 'Product Catalog', icon: BookOpen, count: brand?.catalogEntryCount ?? catalogEntries.filter(e => e.isActive).length },
-    { id: 'flagged', label: 'Counterfeit Reports', icon: AlertTriangle, count: flaggedProducts.length },
   ];
 
   return (
@@ -637,8 +615,6 @@ export default function BrandDashboard() {
                       <tr>
                         <th className="px-4 py-3 font-medium">Seller</th>
                         <th className="px-4 py-3 font-medium">Rating</th>
-                        <th className="px-4 py-3 font-medium">Risk Score</th>
-                        <th className="px-4 py-3 font-medium">Risk Level</th>
                         <th className="px-4 py-3 font-medium">Reviews Received</th>
                         <th className="px-4 py-3 font-medium">Actions</th>
                       </tr>
@@ -652,22 +628,6 @@ export default function BrandDashboard() {
                           </td>
                           <td className="px-4 py-3">
                             <StarRating rating={seller.averageRating || 0} size="sm" />
-                          </td>
-                          <td className="px-4 py-3">
-                            {seller.sellerRS !== null && seller.sellerRS !== undefined ? (
-                              <span className="text-sm font-bold">{seller.sellerRS}</span>
-                            ) : (
-                              <span className="text-xs text-zinc-500">Not scored</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            {seller.riskLevel ? (
-                              <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${RISK_COLORS[seller.riskLevel]}`}>
-                                {seller.riskLevel.charAt(0).toUpperCase() + seller.riskLevel.slice(1)}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-zinc-500">—</span>
-                            )}
                           </td>
                           <td className="px-4 py-3 text-sm text-zinc-300">{seller.totalReviewsReceived || 0}</td>
                           <td className="px-4 py-3">
@@ -711,9 +671,6 @@ export default function BrandDashboard() {
                       <div>
                         <p className="font-bold">{sellerName}</p>
                         <p className="text-sm text-zinc-400">{seller?.email}</p>
-                        {seller?.sellerRS !== null && seller?.sellerRS !== undefined && (
-                          <p className="text-xs text-zinc-500 mt-1">Risk Score: <span className="font-medium text-white">{seller.sellerRS}</span></p>
-                        )}
                       </div>
                       <div className="flex gap-2">
                         <button
@@ -757,18 +714,6 @@ export default function BrandDashboard() {
                   <Plus className="w-4 h-4" />
                   Add Product
                 </button>
-              </div>
-
-              {/* AI Hook info banner */}
-              <div className="bg-gradient-to-r from-violet-500/5 via-purple-500/5 to-blue-500/5 border border-violet-500/20 rounded-2xl p-4 flex items-start gap-3">
-                <Sparkles className="w-5 h-5 text-violet-400 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold text-violet-300">Phase 4: AI Counterfeit Detection Hooks Active</p>
-                  <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
-                    Any seller product claiming your brand name will be automatically cross-referenced against this catalog.
-                    Image + text similarity scores will be assigned. Low-scoring listings are automatically flagged as potential counterfeits.
-                  </p>
-                </div>
               </div>
 
               {/* Catalog entries list */}
@@ -817,88 +762,7 @@ export default function BrandDashboard() {
           )}
 
           {/* ── Flagged Listings / Counterfeit Reports ────────────────────── */}
-          {activeTab === 'flagged' && (
-            <div className="space-y-4">
-              <div className="bg-gradient-to-r from-red-500/5 via-rose-500/5 to-orange-500/5 border border-red-500/20 rounded-2xl p-4 flex items-start gap-3">
-                <Shield className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold text-red-300">AI Counterfeit Detection Reports</p>
-                  <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
-                    These are standalone product listings created by unverified sellers claiming your brand name. 
-                    The AI pipeline has flagged them for having a low similarity score against your official catalog entries.
-                  </p>
-                </div>
-              </div>
-
-              {flaggedProducts.length === 0 ? (
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-12 text-center">
-                  <CheckCircle className="w-12 h-12 text-emerald-500/50 mx-auto mb-4" />
-                  <h3 className="text-lg font-bold mb-2">No Flagged Listings</h3>
-                  <p className="text-zinc-400 text-sm">No suspicious products claiming your brand are currently flagged.</p>
-                </div>
-              ) : (
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
-                  <div className="p-5 border-b border-zinc-800">
-                    <h2 className="font-bold text-lg">Flagged Counterfeits ({flaggedProducts.length})</h2>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                      <thead className="bg-zinc-800/50 text-xs text-zinc-400 border-b border-zinc-800">
-                        <tr>
-                          <th className="px-4 py-3 font-medium">Product Listing</th>
-                          <th className="px-4 py-3 font-medium">Claimed Brand</th>
-                          <th className="px-4 py-3 font-medium">Seller</th>
-                          <th className="px-4 py-3 font-medium">Risk Score</th>
-                          <th className="px-4 py-3 font-medium">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {flaggedProducts.map((product) => (
-                          <tr key={product._id} className="border-b border-zinc-800/50 hover:bg-zinc-800/20 transition-colors">
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-3">
-                                {product.images?.[0] ? (
-                                  <img src={product.images[0]} alt="" className="w-10 h-10 rounded bg-zinc-800 object-cover" />
-                                ) : (
-                                  <div className="w-10 h-10 rounded bg-zinc-800 flex items-center justify-center">
-                                    <ImageIcon className="w-4 h-4 text-zinc-600" />
-                                  </div>
-                                )}
-                                <div>
-                                  <Link to={`/p/${product._id}`} className="font-medium text-sm text-zinc-200 hover:text-[#FF9900] truncate max-w-[200px] block">
-                                    {product.title}
-                                  </Link>
-                                  <p className="text-xs text-zinc-500">${product.price?.toFixed(2)}</p>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-sm text-zinc-300">{product.brandName || <span className="text-zinc-600">—</span>}</td>
-                            <td className="px-4 py-3">
-                              <p className="text-sm">{product.sellerId?.storeName || `${product.sellerId?.firstName} ${product.sellerId?.lastName}`.trim()}</p>
-                              <Link to={`/seller/${product.sellerId?._id}/store`} className="text-xs text-[#007185] hover:underline">View Store</Link>
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-2">
-                                <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${RISK_COLORS[product.riskLevel] || 'bg-zinc-800 text-zinc-400'}`}>
-                                  {product.riskLevel ? product.riskLevel.charAt(0).toUpperCase() + product.riskLevel.slice(1) : 'Unknown'}
-                                </span>
-                                {product.productRS !== null && <span className="text-xs text-zinc-500">({product.productRS}/100)</span>}
-                              </div>
-                            </td>
-                            <td className="px-4 py-3">
-                              <Link to={`/p/${product._id}`} className="text-xs bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-1.5 rounded-lg transition-colors inline-block">
-                                Review Listing
-                              </Link>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+          {activeTab === 'flagged' && null}
         </motion.div>
       </div>
     </div>

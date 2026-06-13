@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Shield, Package, Users, AlertTriangle, CheckCircle, Clock,
   XCircle, Ban, Pause, Play, Search, ChevronLeft, ChevronRight,
-  BarChart3, Filter, RefreshCw, TrendingUp, Eye, ChevronDown, ChevronUp
+  RefreshCw, TrendingUp, Eye, ChevronDown, ChevronUp
 } from 'lucide-react';
 import {
   getStats,
@@ -34,20 +34,6 @@ const StatusBadge = ({ status }) => {
     <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border ${c.cls}`}>
       <Icon className="w-3 h-3" />
       {c.label}
-    </span>
-  );
-};
-
-const RiskBadge = ({ riskLevel }) => {
-  if (!riskLevel) return <span className="text-xs text-zinc-600 italic">Unscored</span>;
-  const config = {
-    low:    'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-    medium: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-    high:   'bg-red-500/10 text-red-400 border-red-500/20',
-  };
-  return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${config[riskLevel]}`}>
-      {riskLevel.charAt(0).toUpperCase() + riskLevel.slice(1)}
     </span>
   );
 };
@@ -141,44 +127,10 @@ const StatsBar = ({ stats }) => {
   );
 };
 
-// Risk distribution mini-bar
-const RiskDistribution = ({ stats }) => {
-  if (!stats) return null;
-  const { low = 0, medium = 0, high = 0 } = stats.products.byRiskLevel;
-  const total = low + medium + high;
-
-  return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <BarChart3 className="w-4 h-4 text-zinc-400" />
-        <span className="text-sm font-medium text-zinc-300">Risk Distribution</span>
-        {total === 0 && <span className="text-xs text-zinc-600 ml-auto italic">AI scoring in Phase 3</span>}
-      </div>
-      {total > 0 ? (
-        <>
-          <div className="flex rounded-full overflow-hidden h-2 mb-3">
-            <div className="bg-emerald-500 transition-all" style={{ width: `${(low / total) * 100}%` }} />
-            <div className="bg-amber-500 transition-all" style={{ width: `${(medium / total) * 100}%` }} />
-            <div className="bg-red-500 transition-all" style={{ width: `${(high / total) * 100}%` }} />
-          </div>
-          <div className="flex gap-4 text-xs">
-            <span className="flex items-center gap-1.5 text-emerald-400"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />Low ({low})</span>
-            <span className="flex items-center gap-1.5 text-amber-400"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />Med ({medium})</span>
-            <span className="flex items-center gap-1.5 text-red-400"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" />High ({high})</span>
-          </div>
-        </>
-      ) : (
-        <div className="flex rounded-full overflow-hidden h-2 bg-zinc-800" />
-      )}
-    </div>
-  );
-};
-
 // ─── Filter Bar ───────────────────────────────────────────────────────────────
 
 const FilterBar = ({ filters, onFilterChange, forSellers = false }) => {
-  const statusOptions = ['', 'pending_review', 'pending', 'published', 'approved', 'flagged', 'rejected'];
-  const riskOptions = ['', 'low', 'medium', 'high'];
+  const statusOptions = ['', 'pending', 'published', 'approved', 'flagged', 'rejected'];
 
   return (
     <div className="flex flex-wrap gap-3 items-center">
@@ -205,17 +157,6 @@ const FilterBar = ({ filters, onFilterChange, forSellers = false }) => {
           ))}
         </select>
       )}
-
-      <select
-        value={filters.riskLevel || ''}
-        onChange={e => onFilterChange('riskLevel', e.target.value)}
-        className="bg-zinc-900 border border-zinc-800 text-sm text-zinc-300 rounded-xl px-3 py-2 outline-none focus:border-zinc-600 transition-colors"
-      >
-        <option value="">All Risk Levels</option>
-        {riskOptions.filter(Boolean).map(r => (
-          <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>
-        ))}
-      </select>
 
       <select
         value={filters.banned !== undefined ? String(filters.banned) : ''}
@@ -342,7 +283,6 @@ const ProductsTab = () => {
                   <th className="px-5 py-3 font-medium">Seller</th>
                   <th className="px-5 py-3 font-medium">Price</th>
                   <th className="px-5 py-3 font-medium">Status</th>
-                  <th className="px-5 py-3 font-medium">Risk</th>
                   <th className="px-5 py-3 font-medium">Flags</th>
                   <th className="px-5 py-3 font-medium text-right">Actions</th>
                 </tr>
@@ -369,14 +309,6 @@ const ProductsTab = () => {
                       </td>
                       <td className="px-5 py-4 text-zinc-300 font-medium">${product.price?.toFixed(2)}</td>
                       <td className="px-5 py-4"><StatusBadge status={product.status} /></td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-2">
-                          <RiskBadge riskLevel={product.riskLevel} />
-                          {product.productRS !== null && product.productRS !== undefined && (
-                            <span className="text-xs text-zinc-500 font-medium">({product.productRS})</span>
-                          )}
-                        </div>
-                      </td>
                       <td className="px-5 py-4"><ModerationFlags banned={product.banned} suspended={product.suspended} /></td>
                       <td className="px-5 py-4">
                         <div className="flex items-center justify-end gap-1.5">
@@ -528,7 +460,6 @@ const SellersTab = () => {
               <thead>
                 <tr className="border-b border-zinc-800 text-xs text-zinc-500 uppercase tracking-wider">
                   <th className="px-5 py-3 font-medium">Seller</th>
-                  <th className="px-5 py-3 font-medium">Risk Score</th>
                   <th className="px-5 py-3 font-medium">Products</th>
                   <th className="px-5 py-3 font-medium">Flags</th>
                   <th className="px-5 py-3 font-medium">Joined</th>
@@ -556,14 +487,6 @@ const SellersTab = () => {
                             <p className="font-medium text-zinc-200">{seller.firstName} {seller.lastName}</p>
                             <p className="text-xs text-zinc-500">{seller.email}</p>
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-2">
-                          <RiskBadge riskLevel={seller.riskLevel} />
-                          {seller.sellerRS !== null && seller.sellerRS !== undefined && (
-                            <span className="text-xs text-zinc-500">({seller.sellerRS})</span>
-                          )}
                         </div>
                       </td>
                       <td className="px-5 py-4">
@@ -648,7 +571,6 @@ const SellersTab = () => {
                                     <span className="text-zinc-600">{p.category}</span>
                                     <span className="text-zinc-400">${p.price?.toFixed(2)}</span>
                                     <StatusBadge status={p.status} />
-                                    <RiskBadge riskLevel={p.riskLevel} />
                                   </div>
                                 ))}
                               </div>
@@ -742,16 +664,6 @@ const ReviewsTab = () => {
           <option value="false">Active</option>
           <option value="true">Removed</option>
         </select>
-        <select
-          value={filters.riskLevel || ''}
-          onChange={(e) => { setFilters(prev => ({ ...prev, riskLevel: e.target.value || undefined })); setPage(1); }}
-          className="bg-zinc-900 border border-zinc-800 text-sm text-zinc-300 rounded-xl px-3 py-2 outline-none"
-        >
-          <option value="">All Risk Levels</option>
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
-          <option value="high">High</option>
-        </select>
       </div>
 
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
@@ -774,7 +686,6 @@ const ReviewsTab = () => {
                   <th className="px-5 py-3 font-medium">Product</th>
                   <th className="px-5 py-3 font-medium">Rating</th>
                   <th className="px-5 py-3 font-medium">Status</th>
-                  <th className="px-5 py-3 font-medium">Risk</th>
                   <th className="px-5 py-3 font-medium text-right">Actions</th>
                 </tr>
               </thead>
@@ -819,7 +730,6 @@ const ReviewsTab = () => {
                         )}
                       </div>
                     </td>
-                    <td className="px-5 py-4"><RiskBadge riskLevel={review.riskLevel} /></td>
                     <td className="px-5 py-4">
                       <div className="flex items-center justify-end gap-1.5">
                         {!review.isRemoved ? (
@@ -931,11 +841,6 @@ const AdminDashboard = () => {
           ) : (
             <StatsBar stats={stats} />
           )}
-        </motion.div>
-
-        {/* Risk Distribution */}
-        <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
-          <RiskDistribution stats={stats} />
         </motion.div>
 
         {/* Tab Navigation */}

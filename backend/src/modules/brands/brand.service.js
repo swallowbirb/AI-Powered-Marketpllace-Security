@@ -46,7 +46,7 @@ const getEnrolledSellers = async (brandId, ownerId) => {
   if (!brand) throw new Error('Brand not found or unauthorized');
 
   const enrollments = await BrandEnrollment.find({ brandId, status: 'approved' })
-    .populate('sellerId', 'firstName lastName email storeName sellerRS riskLevel averageRating totalReviewsReceived banned suspended')
+    .populate('sellerId', 'firstName lastName email storeName averageRating totalReviewsReceived banned suspended')
     .lean();
 
   return enrollments.map((e) => ({ ...e.sellerId, enrollmentId: e._id }));
@@ -74,7 +74,7 @@ const getFlaggedProducts = async (brandId, ownerId) => {
     ],
     status: 'flagged'
   })
-    .populate('sellerId', 'firstName lastName email storeName sellerRS riskLevel')
+    .populate('sellerId', 'firstName lastName email storeName')
     .sort({ createdAt: -1 })
     .lean();
 };
@@ -87,7 +87,7 @@ const getPendingEnrollments = async (brandId, ownerId) => {
   if (!brand) throw new Error('Brand not found or unauthorized');
 
   return await BrandEnrollment.find({ brandId, status: 'pending' })
-    .populate('sellerId', 'firstName lastName email storeName sellerRS riskLevel')
+    .populate('sellerId', 'firstName lastName email storeName')
     .lean();
 };
 

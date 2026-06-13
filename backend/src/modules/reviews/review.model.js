@@ -14,7 +14,7 @@ const reviewSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    // Denormalized for efficient graph queries (avoid extra joins)
+    // Denormalized for efficient queries (avoid extra joins)
     sellerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -41,32 +41,17 @@ const reviewSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-
-    // AI Analysis fields (populated by ML microservice in Phase 4)
-    reviewRS: {
-      type: Number,
-      default: null,
-      min: 0,
-      max: 100,
-    },
-    // Derived risk level from reviewRS thresholds
-    riskLevel: {
-      type: String,
-      enum: ['low', 'medium', 'high', null],
-      default: null,
-    },
     isFlagged: {
       type: Boolean,
       default: false,
       index: true,
     },
-    // e.g. ["text_similarity_high", "burst_timing", "graph_cluster"]
     flagReasons: {
       type: [String],
       default: [],
     },
 
-    // Graph node metadata — Device/IP for reviewer graph analysis
+    // Network metadata — device and IP for moderation analysis
     deviceFingerprint: {
       type: String,
     },
@@ -88,7 +73,6 @@ const reviewSchema = new mongoose.Schema(
 
 // One review per buyer per product (compound unique index)
 reviewSchema.index({ productId: 1, buyerId: 1 }, { unique: true });
-reviewSchema.index({ riskLevel: 1 });
 
 const Review = mongoose.model('Review', reviewSchema);
 

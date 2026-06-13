@@ -1,17 +1,8 @@
 const Product = require('./product.model');
-const aiPipelineService = require('../../services/aiPipeline.service');
 
 const createProduct = async (productData) => {
-  productData.status = 'pending_review';
   const product = new Product(productData);
-  const savedProduct = await product.save();
-  
-  // Trigger AI pipeline asynchronously
-  aiPipelineService.analyzeProductListing(savedProduct._id).catch(err => {
-    console.error("AI Pipeline Trigger Error:", err);
-  });
-  
-  return savedProduct;
+  return await product.save();
 };
 
 const getProductsBySeller = async (sellerId) => {
@@ -22,7 +13,7 @@ const SellerOffer = require('../offers/sellerOffer.model');
 
 const getAllPublishedProducts = async () => {
   const products = await Product.find({
-    status: { $in: ['published', 'approved', 'pending_review'] },
+    status: { $in: ['published', 'approved'] },
     banned: false,
     suspended: false,
   })
@@ -99,7 +90,6 @@ const getProductById = async (productId) => {
   return await Product.findById(productId)
     .populate('sellerId', 'firstName lastName storeName averageRating totalReviewsReceived createdAt')
     .populate('brandId', 'name logoUrl')
-    .populate('claimedCatalogEntryId', 'title sku officialImages brandId')
     .lean();
 };
 
@@ -121,7 +111,7 @@ const deleteProduct = async (productId, sellerId) => {
  */
 const searchProducts = async (filters = {}, page = 1, limit = 20) => {
   const query = {
-    status: { $in: ['published', 'approved', 'pending_review'] },
+    status: { $in: ['published', 'approved'] },
     banned: false,
     suspended: false,
   };
