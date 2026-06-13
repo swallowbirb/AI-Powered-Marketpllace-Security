@@ -1,5 +1,5 @@
-from typing import Optional, List, Any
-from pydantic import BaseModel
+from typing import Optional, List, Any, Dict
+from pydantic import BaseModel, Field, ConfigDict
 
 
 # --- Grading ---
@@ -10,6 +10,10 @@ class GradingRequest(BaseModel):
     category: Optional[str] = None
     return_claim_description: Optional[str] = None
     original_product_id: Optional[str] = None
+    # Optional context used for fraud preflight + similarity analysis.
+    listing_image_urls: List[str] = []
+    catalog_hashes: List[str] = []
+    expected_subject: Optional[str] = None
 
 
 class DefectDetail(BaseModel):
@@ -31,6 +35,12 @@ class GradingResponse(BaseModel):
     routing_hint: str               # resell | refurbish | donate | liquidate
     rationale: str
     model_versions: dict = {}
+    # Provenance / orchestration metadata
+    analysis_summary: Dict[str, Any] = {}
+    form_schema: Dict[str, Any] = {}
+    prompts: Dict[str, str] = {}
+    fraud: Dict[str, Any] = {}
+    status: str = "ok"              # ok | fraud_rejected | failed
 
 
 # --- Vision ---
@@ -38,6 +48,7 @@ class GradingResponse(BaseModel):
 class PhotoValidationRequest(BaseModel):
     photo_url: str                  # S3 URL
     item_id: Optional[str] = None
+    expected_subject: Optional[str] = None
 
 
 class PhotoValidationResponse(BaseModel):
@@ -46,3 +57,22 @@ class PhotoValidationResponse(BaseModel):
     issues: List[str] = []          # e.g. ["blurry", "dark", "moire"]
     blur_score: Optional[float] = None
     brightness_score: Optional[float] = None
+
+
+# --- Form generation (Pass 1) ---
+
+class FormRequest(BaseModel):
+    product_id: str
+    reason: str
+    category: Optional[str] = None
+    initial_photos: List[str] = []
+    listing_data: Dict[str, Any] = {}
+
+
+class FormResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    form_schema: Dict[str, Any] = Field(default_factory=dict, alias="schema")
+    status: str
+    cached: bool
+    key: str

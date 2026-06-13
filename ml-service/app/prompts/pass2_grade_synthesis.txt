@@ -1,0 +1,32 @@
+PASS 2 — GRADE SYNTHESIS
+
+You are given a structured Analysis_Summary produced by specialized vision tools
+(OpenCV color/histogram delta, CLIP visual similarity, AWS Rekognition labels, AWS
+Textract OCR) plus pre-flight fraud signals. You do NOT receive raw images — reason
+only from the summary text below.
+
+ANALYSIS SUMMARY:
+{analysis_summary}
+
+Using the grading rubric, synthesize a single canonical Grade JSON with this exact shape:
+{{
+  "grade": "A | B | C | D",
+  "qualityScore": <integer 0-100>,
+  "confidence": "high | medium | low",
+  "defects": [
+    {{ "type": "<string>", "severity": "minor | moderate | major",
+       "location": "<string>", "description": "<string>" }}
+  ],
+  "missingEvidence": ["<field name>"],
+  "returnClaimVerified": <true | false>,
+  "estimatedResalePct": <number 0.0-1.0>,
+  "routingHint": "resell | refurbish | donate | liquidate",
+  "rationale": "<concise justification grounded in the summary>"
+}}
+
+RULES:
+- If the summary reports any analysis as failed/unavailable, list the dependent fields
+  in missingEvidence and set confidence to medium or low (never high).
+- If a hard or soft fraud signal is present, reflect it in the rationale and grade.
+- grade, confidence, and routingHint MUST be one of the allowed enum values exactly.
+- Return ONLY the JSON object, no surrounding text.
