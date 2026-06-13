@@ -1,4 +1,7 @@
 require("dotenv").config();
+const dns = require("dns");
+dns.setDefaultResultOrder("ipv4first");
+dns.setServers(["8.8.8.8", "8.8.4.4"]);
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -28,6 +31,8 @@ const healthCardRoutes = require("./src/modules/healthCard/healthCard.routes");
 const sustainabilityRoutes = require("./src/modules/sustainability/sustainability.routes");
 const trustRoutes = require("./src/modules/trust/trust.routes");
 const uploadsRoutes = require("./src/modules/uploads/uploads.routes");
+const itemsRoutes = require("./src/modules/items/item.routes");
+const lifecycleRoutes = require("./src/modules/lifecycle/lifecycle.routes");
 
 const app = express();
 
@@ -70,6 +75,8 @@ app.use("/api/health-card", healthCardRoutes);
 app.use("/api/sustainability", sustainabilityRoutes);
 app.use("/api/trust", trustRoutes);
 app.use("/api/uploads", uploadsRoutes);
+app.use("/api/items", itemsRoutes);
+app.use("/api/lifecycle", lifecycleRoutes);
 
 // Error Handler
 app.use(errorHandler);

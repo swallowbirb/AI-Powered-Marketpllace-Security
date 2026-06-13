@@ -1,13 +1,9 @@
-// TODO: Add validation schemas for secondhand item creation and submission
-
-const validateCreateDraft = (req, res, next) => {
-  // TODO: validate category, optional title/description
+const validateCreateFromOrder = (req, res, next) => {
+  const { orderId } = req.body;
+  if (!orderId) {
+    return res.status(400).json({ success: false, message: 'orderId is required' });
+  }
   next();
 };
 
-const validateSubmitItem = (req, res, next) => {
-  // TODO: validate photos array has at least 1 image
-  next();
-};
-
-module.exports = { validateCreateDraft, validateSubmitItem };
+module.exports = { validateCreateFromOrder };

@@ -168,13 +168,22 @@ export default function Navbar() {
 
             {/* Returns & Orders */}
             {(!role || role === 'buyer') && (
-              <Link
-                to="/orders"
-                className="flex flex-col hover:outline hover:outline-white hover:outline-1 rounded px-2 py-1 transition-all cursor-pointer text-xs select-none justify-center"
-              >
-                <span className="text-zinc-300 text-[11px] leading-tight">Returns</span>
-                <span className="font-bold text-[13px] leading-tight">& Orders</span>
-              </Link>
+              <>
+                <Link
+                  to="/orders"
+                  className="flex flex-col hover:outline hover:outline-white hover:outline-1 rounded px-2 py-1 transition-all cursor-pointer text-xs select-none justify-center"
+                >
+                  <span className="text-zinc-300 text-[11px] leading-tight">Returns</span>
+                  <span className="font-bold text-[13px] leading-tight">& Orders</span>
+                </Link>
+                <Link
+                  to="/sell-secondhand"
+                  className="flex flex-col hover:outline hover:outline-white hover:outline-1 rounded px-2 py-1 transition-all cursor-pointer text-xs select-none justify-center"
+                >
+                  <span className="text-zinc-300 text-[11px] leading-tight">Sell</span>
+                  <span className="font-bold text-[13px] leading-tight text-emerald-400">Second-Hand</span>
+                </Link>
+              </>
             )}
 
             {/* Cart icon */}

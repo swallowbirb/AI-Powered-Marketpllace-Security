@@ -17,6 +17,7 @@
 const EVENT_TYPES = [
   'INITIATED',
   'EVIDENCE_SUBMITTED',
+  'GRADING',
   'GRADED',
   'ROUTED',
   'IN_TRANSIT',
@@ -24,6 +25,8 @@ const EVENT_TYPES = [
   'SOLD',
   'DONATED',
   'LIQUIDATED',
+  'CANCELLED',
+  'REJECTED',
 ];
 
 const ACTOR_ROLES = ['buyer', 'seller', 'system', 'admin', 'carrier', 'ngo'];
