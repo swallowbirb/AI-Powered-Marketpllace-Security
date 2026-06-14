@@ -83,17 +83,6 @@ const patchNudgeEvent = async (req, res, next) => {
   }
 };
 
-// GET /api/prevention/post-return-message?userId=&productId=
-const getPostReturnMessage = async (req, res, next) => {
-  try {
-    const { userId, productId } = req.query;
-    const data = await preventionService.getPostReturnMessage(userId, productId);
-    res.json({ success: true, data });
-  } catch (e) {
-    next(e);
-  }
-};
-
 // GET /api/prevention/refund-timing?userId=&productId=&riskBand=
 const getRefundTiming = async (req, res, next) => {
   try {
@@ -128,7 +117,6 @@ module.exports = {
   getSellerInsights,
   recompute,
   patchNudgeEvent,
-  getPostReturnMessage,
   getRefundTiming,
   getAnalytics,
 };

@@ -5,6 +5,7 @@ import { UserButton, useAuth } from '@clerk/clerk-react';
 import { CustomSignedIn, CustomSignedOut } from '../../context/CustomUserContext';
 import { Search, ShoppingCart, MapPin, ChevronDown, Menu } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useCart } from '../../context/CartContext';
 
 const CATEGORIES = [
   'All', 'Electronics', 'Clothing', 'Home & Garden', 'Sports', 'Toys', 'Books', 'Automotive', 'Health & Beauty',
@@ -13,6 +14,7 @@ const CATEGORIES = [
 export default function Navbar() {
   const { role, mongoUser } = useCustomUser();
   const { signOut } = useAuth();
+  const { cartCount } = useCart();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -196,10 +198,15 @@ export default function Navbar() {
             </Link>
 
             {/* Cart icon */}
-            <div className="flex items-end gap-1 hover:outline hover:outline-white hover:outline-1 rounded px-2 py-1 transition-all cursor-pointer">
+            <Link to="/cart" className="relative flex items-end gap-1 hover:outline hover:outline-white hover:outline-1 rounded px-2 py-1 transition-all">
               <ShoppingCart className="w-8 h-8 text-white" />
+              {cartCount > 0 && (
+                <span className="absolute -top-1 left-5 bg-[#FF9900] text-black text-[11px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                  {cartCount > 99 ? '99+' : cartCount}
+                </span>
+              )}
               <span className="font-bold text-sm">Cart</span>
-            </div>
+            </Link>
           </div>
 
           {/* Mobile menu button */}

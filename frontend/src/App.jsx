@@ -22,6 +22,7 @@ import BrandDashboard from './pages/brand/BrandDashboard';
 import NewOfferPage from './pages/NewOfferPage';
 import CatalogEntryDetailPage from './pages/CatalogEntryDetailPage';
 import BuyerOrdersPage from './pages/BuyerOrdersPage';
+import CartPage from './pages/CartPage';
 import BrandStorePage from './pages/BrandStorePage';
 import SellSecondhandPage from './pages/SellSecondhandPage';
 import ItemEvidencePage from './pages/ItemEvidencePage';
@@ -156,6 +157,10 @@ function App() {
               <Route path="/dashboard" element={<CustomSignedIn><DashboardRedirect /></CustomSignedIn>} />
 
               {/* Buyer routes */}
+              <Route
+                path="/cart"
+                element={<MarketplaceLayout><CartPage /></MarketplaceLayout>}
+              />
               <Route
                 path="/orders"
                 element={<CustomSignedIn><MarketplaceLayout><BuyerOrdersPage /></MarketplaceLayout></CustomSignedIn>}

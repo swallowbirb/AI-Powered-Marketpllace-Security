@@ -21,12 +21,6 @@ export const recomputePrevention = () =>
 export const updateNudgeEvent = (id, patch) =>
   api.patch(`/prevention/nudge-event/${id}`, patch).then((r) => r.data?.data ?? r.data);
 
-// Post-return feedback (§16) — called from the return confirmation page.
-export const getPostReturnMessage = (userId, productId) =>
-  api
-    .get('/prevention/post-return-message', { params: { userId, productId } })
-    .then((r) => r.data?.data ?? r.data);
-
 // Refund timing — Phase 4 will consume this internally; UI can display it.
 export const getRefundTiming = ({ userId, productId, riskBand }) =>
   api

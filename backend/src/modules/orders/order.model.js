@@ -43,12 +43,39 @@ const orderSchema = new mongoose.Schema(
       enum: ['completed', 'cancelled', 'refunded'],
       default: 'completed',
     },
+    // Payment method. 'prepaid' = mock card (existing behavior). 'cod' = cash on
+    // delivery. Defaulted to 'prepaid' so all existing order creates are unaffected.
+    paymentMethod: {
+      type: String,
+      enum: ['prepaid', 'cod'],
+      default: 'prepaid',
+    },
     paymentDetails: {
       mockCreditCard: {
         type: String,
-        required: true,
+        // Required only for prepaid orders — COD orders carry no card.
+        required: function () {
+          return this.paymentMethod !== 'cod';
+        },
       },
     },
+    // Phase 7.5 — fulfillment lifecycle (additive; default 'placed').
+    // Drives the mid-transit cancel lock (Lever 3). Simulated/advanced via a dev hook.
+    fulfillmentStatus: {
+      type: String,
+      enum: ['placed', 'dispatched', 'in_transit', 'out_for_delivery', 'delivered'],
+      default: 'placed',
+    },
+    // Phase 7.5 — festive policy snapshotted at placement time. Null for orders
+    // placed outside any festive window. Snapshotting protects the buyer from
+    // later calendar edits. Read by returns (window) and cancel (lock) flows.
+    festivePolicy: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+    // Phase 7.5 — set when a cancel attempt was blocked by the mid-transit lock,
+    // and when the order was actually cancelled (for the admin festive panel).
+    cancelledAt: { type: Date, default: null },
     // Populated when the order was placed via a catalog entry offer (catalog path).
     // Null for standalone product orders (existing behavior).
     offerId: {

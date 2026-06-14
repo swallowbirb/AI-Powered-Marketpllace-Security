@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Shield, Package, Users, AlertTriangle, CheckCircle, Clock,
   XCircle, Ban, Pause, Play, Search, ChevronLeft, ChevronRight,
-  RefreshCw, TrendingUp, Eye, ChevronDown, ChevronUp, Sparkles
+  RefreshCw, TrendingUp, Eye, ChevronDown, ChevronUp, Sparkles, Zap, ZapOff
 } from 'lucide-react';
 import {
   getStats,
@@ -16,6 +16,7 @@ import {
   getAdminReviews,
   moderateReview,
 } from '../../services/admin.service';
+import { getFestiveCalendar, setFestiveOverride } from '../../services/festive.service';
 import { listPrompts, savePrompt, resetPrompt } from '../../services/prompt.service';
 
 // ─── Shared Components ────────────────────────────────────────────────────────
@@ -782,6 +783,173 @@ const ReviewsTab = () => {
   );
 };
 
+// ─── Festive Defense Tab ──────────────────────────────────────────────────────
+
+const EVENT_LABELS = {
+  GIF: 'Amazon Great Indian Festival',
+  BBD: 'Big Billion Days',
+  DIWALI: 'Diwali',
+  EOSS: 'End of Season Sale',
+  REPUBLIC_DAY: 'Republic Day Sale',
+  RAKHI: 'Raksha Bandhan',
+  WEDDING: 'Wedding Season',
+};
+
+const FestiveTab = () => {
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [toggling, setToggling] = useState(null); // instanceKey being toggled
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const data = await getFestiveCalendar();
+      setEvents(Array.isArray(data) ? data : []);
+    } catch {
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleToggle = async (event) => {
+    setToggling(event.instanceKey);
+    try {
+      await setFestiveOverride(event.instanceKey, !event.forceActive);
+      await load();
+    } catch (err) {
+      console.error('Override failed:', err);
+    } finally {
+      setToggling(null);
+    }
+  };
+
+  const forced = events.find((e) => e.forceActive);
+
+  return (
+    <div className="space-y-4">
+      {/* Status banner */}
+      <div className={`rounded-2xl border p-4 flex items-center gap-3 ${
+        forced
+          ? 'bg-amber-500/10 border-amber-500/30'
+          : 'bg-zinc-900 border-zinc-800'
+      }`}>
+        {forced ? (
+          <>
+            <Sparkles className="w-5 h-5 text-amber-400 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-bold text-amber-300">Festive Mode ACTIVE (demo override)</p>
+              <p className="text-xs text-amber-500/80 mt-0.5">
+                {EVENT_LABELS[forced.eventCode] || forced.eventCode} — all three levers are live.
+                Toggle off below to restore real dates.
+              </p>
+            </div>
+          </>
+        ) : (
+          <>
+            <ZapOff className="w-5 h-5 text-zinc-500 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-bold text-zinc-400">Festive Mode OFF (real dates govern)</p>
+              <p className="text-xs text-zinc-600 mt-0.5">
+                Force an event active below to demo the festive levers.
+              </p>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Calendar table */}
+      {loading ? (
+        <div className="space-y-2">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-xl h-16 animate-pulse" />
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {events.map((ev) => {
+            const start = new Date(ev.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+            const end = new Date(ev.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+            const isBusy = toggling === ev.instanceKey;
+
+            return (
+              <div
+                key={ev.instanceKey}
+                className={`flex items-center gap-4 rounded-xl border px-4 py-3 transition-colors ${
+                  ev.forceActive
+                    ? 'bg-amber-500/5 border-amber-500/30'
+                    : 'bg-zinc-900 border-zinc-800'
+                }`}
+              >
+                {/* Event info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-sm font-semibold text-white truncate">
+                      {EVENT_LABELS[ev.eventCode] || ev.eventCode}
+                    </span>
+                    {ev.policies?.cancelLock && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400">
+                        cancel-lock
+                      </span>
+                    )}
+                    {ev.forceActive && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
+                        FORCED
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-zinc-500">{start} → {end}</p>
+                </div>
+
+                {/* Lever chips */}
+                <div className="hidden sm:flex items-center gap-1.5">
+                  {ev.policies?.returnWindowShrink && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                      return window
+                    </span>
+                  )}
+                  {ev.policies?.codGate && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20">
+                      COD gate
+                    </span>
+                  )}
+                  {ev.policies?.cancelLock && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                      cancel lock
+                    </span>
+                  )}
+                </div>
+
+                {/* Toggle button */}
+                <button
+                  onClick={() => handleToggle(ev)}
+                  disabled={isBusy}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex-shrink-0 disabled:opacity-50 ${
+                    ev.forceActive
+                      ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300'
+                      : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300'
+                  }`}
+                >
+                  {isBusy ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : ev.forceActive ? (
+                    <><ZapOff className="w-3.5 h-3.5" /> Turn off</>
+                  ) : (
+                    <><Zap className="w-3.5 h-3.5" /> Force ON</>
+                  )}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <p className="text-xs text-zinc-600 pt-2">
+        "Force ON" activates festive levers regardless of today's date — safe for demos.
+        Only one event can be forced at a time. Real-date events activate automatically when the calendar matches.
+      </p>
 // ─── Prompts Tab (AI Grader fine-tuning) ──────────────────────────────────────
 
 const PromptsTab = () => {
@@ -926,6 +1094,7 @@ const TABS = [
   { id: 'products', label: 'Products', icon: Package },
   { id: 'sellers', label: 'Sellers', icon: Users },
   { id: 'reviews', label: 'Reviews', icon: Eye },
+  { id: 'festive', label: 'Festive Mode', icon: Sparkles },
   { id: 'prompts', label: 'AI Prompts', icon: Sparkles },
 ];
 
@@ -1014,10 +1183,7 @@ const AdminDashboard = () => {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.18 }}
           >
-            {activeTab === 'products' ? <ProductsTab />
-              : activeTab === 'sellers' ? <SellersTab />
-              : activeTab === 'reviews' ? <ReviewsTab />
-              : <PromptsTab />}
+            {activeTab === 'products' ? <ProductsTab /> : activeTab === 'sellers' ? <SellersTab /> : activeTab === 'reviews' ? <ReviewsTab /> : <FestiveTab />}
           </motion.div>
         </AnimatePresence>
       </div>

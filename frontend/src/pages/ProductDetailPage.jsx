@@ -10,8 +10,6 @@ import ReviewCard from '../components/shared/ReviewCard';
 import ReviewForm from '../components/shared/ReviewForm';
 import CheckoutModal from '../components/shared/CheckoutModal';
 import FitReturnNote from '../components/prevention/FitReturnNote';
-import ReturnRiskNudge from '../components/prevention/ReturnRiskNudge';
-import BracketingNudge from '../components/prevention/BracketingNudge';
 import { useCart } from '../context/CartContext';
 import { updateNudgeEvent } from '../services/prevention.service';
 import {
@@ -32,8 +30,6 @@ export default function ProductDetailPage() {
   const [orderError, setOrderError] = useState('');
   const [showCheckout, setShowCheckout] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
-  const [showRiskNudge, setShowRiskNudge] = useState(false);
-  const [lastNudgeEventId, setLastNudgeEventId] = useState(null);
 
   useEffect(() => {
     const load = async () => {
@@ -58,31 +54,28 @@ export default function ProductDetailPage() {
 
   const handleBuyNowClick = () => {
     if (!mongoUser) return;
-    // Show risk nudge first — it contains a "Continue anyway" path to setShowCheckout.
-    addToCart(id, 1);
-    setShowRiskNudge(true);
+    addToCart(id, 1, { title: product?.title, price: product?.price, image: product?.images?.[0] });
+    // Fit hint is already shown on the PDP via <FitReturnNote> — no need to repeat
+    // it at checkout. Go straight to the payment modal.
+    setShowCheckout(true);
   };
 
   const handleRiskNudgeContinue = () => {
-    setShowRiskNudge(false);
     setShowCheckout(true);
   };
 
   const handleRiskNudgeAdjust = (action) => {
-    // SIZE_UP / SIZE_DOWN / KEEP_ONE — buyer took the advice.
-    if (action === 'KEEP_ONE') keepOneOf(id);
     if (lastNudgeEventId) {
       updateNudgeEvent(lastNudgeEventId, { acted: true }).catch(() => {});
     }
-    setShowRiskNudge(false);
     setShowCheckout(true);
   };
 
-  const handleConfirmPurchase = async (mockCreditCard) => {
+  const handleConfirmPurchase = async (mockCreditCard, paymentMethod = 'prepaid') => {
     setIsOrdering(true);
     setOrderError('');
     try {
-      const res = await createOrder({ productId: id, quantity: 1, mockCreditCard });
+      const res = await createOrder({ productId: id, quantity: 1, mockCreditCard, paymentMethod });
       if (res.success) {
         setShowCheckout(false);
         setOrderSuccess(true);
@@ -95,6 +88,10 @@ export default function ProductDetailPage() {
         if (productRes.success) setProduct(productRes.data);
       }
     } catch (err) {
+      if (err.response?.data?.code === 'COD_NOT_AVAILABLE') {
+        setOrderError('Cash on Delivery isn’t available for this order during the festive sale. Please pay by card.');
+        return; // keep the modal open so the buyer can switch to card
+      }
       const errorMsg = err.response?.data?.errors 
         ? err.response.data.errors.join(', ')
         : err.response?.data?.message || 'Failed to place order. Please try again.';
@@ -258,9 +255,6 @@ export default function ProductDetailPage() {
             {/* Phase 7 — fit/return note from RIKB */}
             <FitReturnNote productId={id} />
 
-            {/* Phase 7 — bracketing nudge if duplicates in cart */}
-            <BracketingNudge productId={id} />
-
             {/* Stats */}
             <div className="flex flex-wrap gap-3 text-xs text-gray-500">
               <span className="flex items-center gap-1"><Package className="w-3.5 h-3.5" /> {product.totalSales || 0} sold</span>
@@ -292,15 +286,6 @@ export default function ProductDetailPage() {
               <p>Sold by: <Link to={`/seller/${seller?._id}/store`} className="text-[#007185] hover:underline">{sellerName}</Link></p>
             </div>
 
-            {/* Phase 7 — checkout risk nudge (shown before checkout modal) */}
-            {showRiskNudge && (
-              <ReturnRiskNudge
-                items={cart.length > 0 ? cart : [{ productId: id, quantity: 1 }]}
-                onContinue={handleRiskNudgeContinue}
-                onAdjust={handleRiskNudgeAdjust}
-              />
-            )}
-
             {/* Order buttons */}
             {role === 'buyer' ? (
               <>
@@ -326,7 +311,7 @@ export default function ProductDetailPage() {
                       )}
                     </button>
                     <button
-                      onClick={() => addToCart(id, 1)}
+                      onClick={() => addToCart(id, 1, { title: product?.title, price: product?.price, image: product?.images?.[0] })}
                       className="w-full amz-btn-secondary py-2.5 rounded-full text-sm font-semibold flex items-center justify-center gap-2"
                     >
                       <ShoppingCart className="w-4 h-4" /> Add to Cart

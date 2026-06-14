@@ -275,9 +275,61 @@ async function getProductInsight(productId) {
  *
  * Basket-level: worst-band + worst-refund-timing wins.
  */
+/**
+ * sanitizeForClient(rawResult) — strip any signal that lets the buyer infer
+ * they personally have been flagged.
+ *
+ * Phase 7 still computes everything internally (risk band, trust tier, refund
+ * timing, all reasons). But what reaches the client is reduced to:
+ *   - product-level fit help (FIT_NUDGE only)
+ *   - product-level reasons (everything except user-behaviour and bracketing)
+ *
+ * Refund timing, cooling-off hours, basket risk band, and trust tier never
+ * cross the wire to the buyer. Phase 4 reads refund timing through the
+ * internal `getRefundTiming` interface, not through this response.
+ */
+const PRODUCT_LEVEL_REASON_CODES = new Set([
+  'PRODUCT_RETURN_RATE',
+  'FIT_MISMATCH',
+  'CATEGORY_PRIOR',
+  'PRICE_BAND',
+  'REVIEW_SENTIMENT_GAP',
+  'PHOTO_VERIFICATION',
+]);
+
+function sanitizeForClient(raw) {
+  const items = (raw.items || []).map((it) => {
+    const interventionType = it.intervention && it.intervention.type;
+    // Only FIT_NUDGE survives to the client. INFO_NUDGE, COOLING_OFF,
+    // CONFIDENCE_BOOST, and BRACKETING_NUDGE all become NONE so the UI
+    // never says anything about user behaviour or risk.
+    const safeIntervention =
+      interventionType === 'FIT_NUDGE'
+        ? { type: 'FIT_NUDGE', action: it.intervention.action || null }
+        : { type: 'NONE' };
+
+    const safeReasons = (it.topReasons || []).filter(
+      (r) => r && PRODUCT_LEVEL_REASON_CODES.has(r.code)
+    );
+
+    return {
+      productId: it.productId,
+      title: it.title,
+      category: it.category,
+      // intentionally omitted: probability, riskBand, scorecardScore, modelVersion, usedFallback
+      topReasons: safeReasons,
+      fit: it.fit && it.fit.verdict !== 'unknown' ? it.fit : null,
+      intervention: safeIntervention,
+      nudgeEventId: safeIntervention.type === 'FIT_NUDGE' ? it.nudgeEventId : null,
+    };
+  });
+
+  return { items };
+}
+
 async function assessCheckoutRisk({ userId, items }) {
   if (!Array.isArray(items) || items.length === 0) {
-    return { basketRisk: 'low', items: [], trustTier: 'standard', refundTiming: 'instant' };
+    return { items: [] };
   }
 
   const trust = userId ? await trustService.getTrustProfile(userId).catch(() => null) : null;
@@ -324,9 +376,12 @@ async function assessCheckoutRisk({ userId, items }) {
       category: product.category,
     });
 
-    // Log the nudge event (§15) — fire-and-forget, never fail the request
+    // Log the nudge event (§15) — fire-and-forget, never fail the request.
+    // Only log nudges that are actually rendered to the buyer (FIT_NUDGE).
+    // Other intervention types affect refund timing internally but never
+    // surface to the UI, so they don't generate impression events.
     let nudgeEventId = null;
-    if (intervention.type && intervention.type !== 'NONE' && userId) {
+    if (intervention.type === 'FIT_NUDGE' && userId) {
       try {
         const ev = await NudgeEvent.create({
           userId,
@@ -361,13 +416,13 @@ async function assessCheckoutRisk({ userId, items }) {
     });
   }
 
-  return {
+  return sanitizeForClient({
     basketRisk: worstBand(perItem),
     items: perItem,
     trustTier,
     refundTiming: worstRefundTiming(perItem),
     coolingOffHours: COOLING_OFF_HOURS,
-  };
+  });
 }
 
 /**
@@ -456,37 +511,10 @@ async function patchNudgeEvent(id, patch) {
   return NudgeEvent.findByIdAndUpdate(id, update, { new: true }).lean();
 }
 
-// ── Post-return feedback (§16) ─────────────────────────────────────────────
-
-const POST_RETURN_MESSAGES = {
-  FIT_NUDGE:
-    'We noticed this item tends to run differently than buyers expect. Next time, ' +
-    'check the fit hint on the product page — it can help you pick the right size first time.',
-  BRACKETING_NUDGE:
-    'Tip: the fit hint on the product page can help you find the right size without ' +
-    'ordering multiples. Look for the 📐 icon next time!',
-  INFO_NUDGE:
-    'This item is commonly returned. Next time, check the return insights section on ' +
-    'the product page before buying.',
-  COOLING_OFF: null,
-  CONFIDENCE_BOOST: null,
-};
-
-async function getPostReturnMessage(userId, productId) {
-  if (!userId || !productId) return null;
-  const ev = await NudgeEvent.findOne({
-    userId,
-    productId,
-    shown: true,
-    acted: { $ne: true },
-  })
-    .sort({ shownAt: -1 })
-    .lean();
-  if (!ev) return null;
-  const message = POST_RETURN_MESSAGES[ev.nudgeType];
-  if (!message) return null;
-  return { message, nudgeType: ev.nudgeType, nudgeEventId: String(ev._id) };
-}
+// ── Post-return feedback removed (§16) ─────────────────────────────────────
+// The "we warned you last time" learning card has been retired. It told the
+// buyer their previous purchase was nudged, which leaks risk-system internals.
+// Trust-side scoring and refund timing still react to ignored nudges silently.
 
 // ── Analytics (§20) ────────────────────────────────────────────────────────
 
@@ -558,9 +586,8 @@ module.exports = {
   getNudgeAnalytics,
   // Phase 4 frozen interface
   getRefundTiming,
-  // nudge tracking + post-return
+  // nudge tracking
   patchNudgeEvent,
-  getPostReturnMessage,
   // admin / dev
   runRecompute,
   // exported for tests / seed

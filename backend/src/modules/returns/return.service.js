@@ -17,10 +17,34 @@ const initiateReturn = async (userId, { orderId, reasonCode, reasonText, clarify
 
   if (!order) throw new Error('Order not found or not eligible for return');
 
-  // Enforce return window
+  // Enforce return window — Phase 7.5 makes this festive- and tier-aware.
+  // Defensive: if the festive module is absent or errors, fall back to the base window.
+  // Prefer the policy snapshotted on the order at placement time; otherwise compute now.
+  let windowDays = RETURN_WINDOW_DAYS;
+  try {
+    const festiveService = require('../festive/festive.service');
+    const snapshot = order.festivePolicy;
+    const isFullWindowReason = ['defective', 'wrong_item'].includes(reasonCode);
+
+    if (snapshot && snapshot.returnWindowDays != null && !isFullWindowReason) {
+      windowDays = snapshot.returnWindowDays;
+    } else if (!isFullWindowReason) {
+      let tier = snapshot && snapshot.tierAtPurchase;
+      if (!tier) tier = await festiveService.resolveTier(userId);
+      const w = await festiveService.getReturnWindowDays({
+        orderCreatedAt: order.createdAt,
+        tier,
+        reasonCode,
+      });
+      windowDays = w.windowDays;
+    }
+  } catch (_) {
+    windowDays = RETURN_WINDOW_DAYS; // festive module not ready → base window
+  }
+
   const daysSinceOrder = (Date.now() - new Date(order.createdAt)) / (1000 * 60 * 60 * 24);
-  if (daysSinceOrder > RETURN_WINDOW_DAYS) {
-    throw new Error(`Return window expired (${RETURN_WINDOW_DAYS} days)`);
+  if (daysSinceOrder > windowDays) {
+    throw new Error(`Return window expired (${windowDays} days)`);
   }
 
   // Check no active return already exists for this order

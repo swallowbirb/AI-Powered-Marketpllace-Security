@@ -63,5 +63,4 @@ module.exports = {
   validateObjectIdParam,
   validateCheckoutRisk,
   validateNudgePatch,
-  validatePostReturnQuery,
 };
