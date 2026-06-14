@@ -4,10 +4,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getSellerProducts, deleteProduct } from '../services/product.service';
 import { getSellerEnrollments, requestEnrollment } from '../services/brand.service';
 import { getMyOffers, deleteOffer, updateOffer } from '../services/offer.service';
+import { getMyResaleListings, publishResaleListing, unlistResaleListing, updateResalePrice } from '../services/resale.service';
 import {
   PlusCircle, Package, Activity, AlertTriangle, CheckCircle, Clock,
   AlertCircle, Shield, Tag, ChevronRight, Loader2, Store, Users,
   ShoppingBag, Zap, ExternalLink, Trash2, ToggleLeft, ToggleRight, X,
+  Recycle, Check, Pencil,
 } from 'lucide-react';
 import { useCustomUser } from '../context/CustomUserContext';
 import ReturnInsightsPanel from '../components/prevention/ReturnInsightsPanel';
@@ -54,6 +56,7 @@ const EnrollmentBadge = ({ status }) => {
 const TABS = [
   { id: 'listings', label: 'My Listings', icon: Package },
   { id: 'offers', label: 'My Offers', icon: ShoppingBag },
+  { id: 'resale', label: 'Resale Listings', icon: Recycle },
   { id: 'brands', label: 'Brand Authorization', icon: Tag },
   { id: 'insights', label: 'Return Insights', icon: Activity },
 ];
@@ -63,9 +66,14 @@ const SellerDashboard = () => {
   const [products, setProducts] = useState([]);
   const [brands, setBrands] = useState([]);
   const [offers, setOffers] = useState([]);
+  const [resaleListings, setResaleListings] = useState([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [isLoadingBrands, setIsLoadingBrands] = useState(false);
   const [isLoadingOffers, setIsLoadingOffers] = useState(false);
+  const [isLoadingResale, setIsLoadingResale] = useState(false);
+  const [editingPriceId, setEditingPriceId] = useState(null);
+  const [priceDraft, setPriceDraft] = useState('');
+  const [resaleBusyId, setResaleBusyId] = useState(null);
   const [applyingId, setApplyingId] = useState(null);
   const [applyError, setApplyError] = useState('');
   const [showListingModal, setShowListingModal] = useState(false);
@@ -119,6 +127,69 @@ const SellerDashboard = () => {
     };
     fetchOffers();
   }, [activeTab]);
+
+  // Load resale listings when tab is switched to 'resale'
+  useEffect(() => {
+    if (activeTab !== 'resale') return;
+    const fetchResale = async () => {
+      setIsLoadingResale(true);
+      try {
+        const res = await getMyResaleListings();
+        if (res.success) setResaleListings(res.data);
+      } catch (err) {
+        console.error('Failed to fetch resale listings:', err);
+      } finally {
+        setIsLoadingResale(false);
+      }
+    };
+    fetchResale();
+  }, [activeTab]);
+
+  const handlePublishResale = async (listingId) => {
+    setResaleBusyId(listingId);
+    try {
+      const res = await publishResaleListing(listingId);
+      if (res.success) {
+        setResaleListings((prev) => prev.map((l) => (l._id === listingId ? res.data : l)));
+      }
+    } catch (err) {
+      console.error('Failed to publish listing:', err);
+    } finally {
+      setResaleBusyId(null);
+    }
+  };
+
+  const handleUnlistResale = async (listingId) => {
+    setResaleBusyId(listingId);
+    try {
+      const res = await unlistResaleListing(listingId);
+      if (res.success) {
+        setResaleListings((prev) => prev.map((l) => (l._id === listingId ? res.data : l)));
+      }
+    } catch (err) {
+      console.error('Failed to unlist listing:', err);
+    } finally {
+      setResaleBusyId(null);
+    }
+  };
+
+  const handleSavePrice = async (listingId) => {
+    const num = Number(priceDraft);
+    if (!Number.isFinite(num) || num < 0) return;
+    setResaleBusyId(listingId);
+    try {
+      const res = await updateResalePrice(listingId, num);
+      if (res.success) {
+        setResaleListings((prev) => prev.map((l) => (l._id === listingId ? res.data : l)));
+        setEditingPriceId(null);
+        setPriceDraft('');
+      }
+    } catch (err) {
+      console.error('Failed to update price:', err);
+    } finally {
+      setResaleBusyId(null);
+    }
+  };
 
   const handleRequestEnrollment = async (brandId) => {
     setApplyingId(brandId);
@@ -564,6 +635,153 @@ const SellerDashboard = () => {
             </motion.div>
           )}
 
+
+          {activeTab === 'resale' && (
+            <motion.div
+              key="resale"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-4"
+            >
+              <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-4 flex items-start gap-3">
+                <Recycle className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-emerald-400">Second-Life Resale Listings</p>
+                  <p className="text-xs text-zinc-400 mt-0.5 leading-relaxed">
+                    Graded items routed for resale appear here as drafts. Review the AI grade, tune the price,
+                    then publish to the Second-Life Marketplace.
+                  </p>
+                </div>
+              </div>
+
+              {isLoadingResale ? (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-12 flex items-center justify-center">
+                  <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+                </div>
+              ) : resaleListings.length === 0 ? (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-12 text-center">
+                  <Recycle className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
+                  <h3 className="text-lg font-bold mb-2">No Resale Listings Yet</h3>
+                  <p className="text-zinc-400 text-sm">Graded items routed for resale will show up here automatically.</p>
+                </div>
+              ) : (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+                  <div className="p-5 border-b border-zinc-800">
+                    <h2 className="font-bold text-lg">My Resale Listings ({resaleListings.length})</h2>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-zinc-800/50 text-xs text-zinc-400 border-b border-zinc-800">
+                        <tr>
+                          <th className="px-4 py-3 font-medium">Item</th>
+                          <th className="px-4 py-3 font-medium">Grade</th>
+                          <th className="px-4 py-3 font-medium">Demand</th>
+                          <th className="px-4 py-3 font-medium">Suggested</th>
+                          <th className="px-4 py-3 font-medium">Price</th>
+                          <th className="px-4 py-3 font-medium">Status</th>
+                          <th className="px-4 py-3 font-medium text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resaleListings.map((listing) => {
+                          const statusStyle = {
+                            DRAFT: 'bg-zinc-700 text-zinc-300',
+                            PUBLISHED: 'bg-emerald-500/10 text-emerald-400',
+                            UNLISTED: 'bg-amber-500/10 text-amber-400',
+                            SOLD: 'bg-blue-500/10 text-blue-400',
+                          }[listing.status] || 'bg-zinc-700 text-zinc-400';
+                          const isEditing = editingPriceId === listing._id;
+                          const busy = resaleBusyId === listing._id;
+                          return (
+                            <motion.tr
+                              key={listing._id}
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              className="border-b border-zinc-800/50 hover:bg-zinc-800/20 transition-colors"
+                            >
+                              <td className="px-4 py-3 max-w-[220px]">
+                                <Link
+                                  to={`/resale/${listing._id}`}
+                                  className="font-medium text-sm text-zinc-200 hover:text-emerald-400 transition-colors flex items-center gap-1 group"
+                                >
+                                  <span className="truncate">{listing.title}</span>
+                                  <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                                </Link>
+                                <p className="text-xs text-zinc-500 mt-0.5">{listing.category} · {listing.conditionLane}</p>
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className="text-sm font-bold text-white">{listing.grade}</span>
+                                <span className="text-xs text-zinc-500"> · {listing.qualityScore}/100</span>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-zinc-300">{listing.demandCount}</td>
+                              <td className="px-4 py-3 text-sm text-zinc-400">₹{Number(listing.suggestedPrice).toLocaleString()}</td>
+                              <td className="px-4 py-3">
+                                {isEditing ? (
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="number"
+                                      value={priceDraft}
+                                      onChange={(e) => setPriceDraft(e.target.value)}
+                                      className="w-24 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                      autoFocus
+                                    />
+                                    <button onClick={() => handleSavePrice(listing._id)} disabled={busy} className="text-emerald-400 hover:text-emerald-300 p-1" title="Save">
+                                      {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                    </button>
+                                    <button onClick={() => { setEditingPriceId(null); setPriceDraft(''); }} className="text-zinc-500 hover:text-zinc-300 p-1" title="Cancel">
+                                      <X className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => { setEditingPriceId(listing._id); setPriceDraft(String(listing.price)); }}
+                                    disabled={listing.status === 'SOLD'}
+                                    className="flex items-center gap-1.5 text-sm font-bold text-white hover:text-emerald-400 transition-colors disabled:opacity-50"
+                                    title="Edit price"
+                                  >
+                                    ₹{Number(listing.price).toLocaleString()}
+                                    <Pencil className="w-3 h-3 text-zinc-500" />
+                                  </button>
+                                )}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusStyle}`}>
+                                  {listing.status}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                {listing.status === 'DRAFT' || listing.status === 'UNLISTED' ? (
+                                  <button
+                                    onClick={() => handlePublishResale(listing._id)}
+                                    disabled={busy}
+                                    className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-full font-medium hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
+                                  >
+                                    {busy ? '…' : 'Publish'}
+                                  </button>
+                                ) : listing.status === 'PUBLISHED' ? (
+                                  <button
+                                    onClick={() => handleUnlistResale(listing._id)}
+                                    disabled={busy}
+                                    className="text-xs bg-zinc-800 text-zinc-300 border border-zinc-700 px-3 py-1 rounded-full font-medium hover:bg-zinc-700 transition-colors disabled:opacity-50"
+                                  >
+                                    {busy ? '…' : 'Unlist'}
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-zinc-600">—</span>
+                                )}
+                              </td>
+                            </motion.tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
 
           {activeTab === 'brands' && (
             <motion.div

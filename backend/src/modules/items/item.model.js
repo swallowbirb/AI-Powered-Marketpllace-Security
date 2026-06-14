@@ -52,6 +52,10 @@ const itemSchema = new mongoose.Schema(
     reasonText: { type: String, trim: true },
     description: { type: String, trim: true },
 
+    // Free-text notes the previous owner adds after grading — surfaced on the
+    // resale listing (Phase B). Editable by the initiator only.
+    ownerNotes: { type: String, trim: true, default: '' },
+
     // Evidence collected during intake
     evidencePhotos: { type: [String], default: [] },
 
