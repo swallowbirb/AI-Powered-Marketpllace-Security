@@ -15,6 +15,15 @@ export const getItemLogs = async (itemId) => {
   return response.data;
 };
 
+/**
+ * Poll the dynamic Pass-1 evidence form for an item (v3.44).
+ * Returns { readiness: 'pending'|'ready'|'fallback', schema, source }.
+ */
+export const getEvidenceForm = async (itemId) => {
+  const response = await api.get(`/grading/form/${itemId}`);
+  return response.data;
+};
+
 export const getMyItems = async () => {
   const response = await api.get('/items/my');
   return response.data;
@@ -43,4 +52,16 @@ export const uploadToS3 = async (file, itemId) => {
   });
 
   return data.publicUrl;
+};
+
+/**
+ * Validate a single uploaded photo against an expected subject (v3.44).
+ * Proxies to the ML service via the backend grading module.
+ * Returns { is_valid, issues[], blur_score, brightness_score }.
+ */
+export const validateEvidencePhoto = async ({ photoUrl, itemId, expectedSubject }) => {
+  const response = await api.post('/grading/validate-photo', {
+    photoUrl, itemId, expectedSubject,
+  });
+  return response.data;
 };

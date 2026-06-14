@@ -134,6 +134,7 @@ async def run_analysis(
     fraud_outcome: Optional[Dict[str, Any]] = None,
     category: Optional[str] = None,
     reason: Optional[str] = None,
+    field_images: Optional[Dict[str, List[str]]] = None,
     trace=None,
 ) -> Dict[str, Any]:
     """
@@ -141,6 +142,7 @@ async def run_analysis(
     Each task is independently guarded; a failure is recorded as a warning (Req 6.5/6.6).
     """
     listing_images = listing_images or []
+    field_images = field_images or {}
     timeout = settings.analysis_timeout_seconds
 
     if trace is not None:
@@ -166,6 +168,23 @@ async def run_analysis(
         "warnings": [],
         "analyses": {},
     }
+
+    # v3.44 — record which uploaded photo answers which named form field, so Pass 2
+    # can speak in field terms ("sole_photo shows heavy wear") rather than "image 3"
+    # (improvement #3). Build a reverse url→field index too for label attribution.
+    if field_images:
+        summary["field_images"] = field_images
+        url_to_field = {}
+        for field_id, urls in field_images.items():
+            for u in (urls or []):
+                url_to_field.setdefault(u, field_id)
+        summary["evidence_fields"] = sorted(field_images.keys())
+        if trace is not None:
+            mapped = sum(len(v or []) for v in field_images.values())
+            trace.info("analysis", "ANALYSIS_FIELD_MAP",
+                       f"🗂️ Evidence mapped to {len(field_images)} named field(s) "
+                       f"({mapped} photo(s)): {', '.join(sorted(field_images.keys()))}",
+                       field_count=len(field_images), mapped_photo_count=mapped)
 
     for name, result in zip(tasks.keys(), results):
         if isinstance(result, Exception):

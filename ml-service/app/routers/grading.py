@@ -22,7 +22,9 @@ async def generate_evidence_form(request: FormRequest):
     trace = PipelineTrace(request.product_id)
     trace.info("pass1", "FORM_RECEIVED",
                f"📨 Pass 1 /form received for product={request.product_id} "
-               f"(category={request.category or 'unknown'}, {len(request.initial_photos)} initial photo(s))")
+               f"(category={request.category or 'unknown'}, {len(request.initial_photos)} initial photo(s), "
+               f"{len(request.listing_image_urls)} catalog reference photo(s), "
+               f"listing_data={'present' if request.listing_data else 'empty'})")
     try:
         load_base_prompt()  # Req 13.5 — abort if base prompt unavailable
     except PromptError as exc:
@@ -35,7 +37,9 @@ async def generate_evidence_form(request: FormRequest):
         reason=request.reason,
         category=request.category,
         initial_photos=request.initial_photos,
+        listing_image_urls=request.listing_image_urls,
         listing_data=request.listing_data,
+        seller_prompt=request.seller_prompt,
         trace=trace,
     )
     return FormResponse(
@@ -76,7 +80,9 @@ async def grade_item(request: GradingRequest):
                             detail={"error": f"Base prompt unavailable: {exc}", "trace": trace.to_list()})
 
     # --- Pre-flight fraud checks (Req 2) ---
-    fraud = await fraud_preflight.run_preflight(photos, request.catalog_hashes, trace=trace)
+    fraud = await fraud_preflight.run_preflight(
+        photos, request.catalog_hashes,
+        listing_image_urls=request.listing_image_urls, trace=trace)
 
     if fraud["classification"] == fraud_preflight.CLASSIFICATION_HARD:
         # Short-circuit: skip both Gemini passes, persist no grade (Req 2.3).
@@ -109,6 +115,7 @@ async def grade_item(request: GradingRequest):
         fraud_outcome=fraud,
         category=request.category,
         reason=request.return_claim_description,
+        field_images=request.field_images,
         trace=trace,
     )
 
@@ -134,9 +141,9 @@ async def grade_item(request: GradingRequest):
     # Include the Pass-1 Form_Schema for the Evidence_Bundle (Req 8.2). Reuse a cached
     # schema when available; otherwise fall back to the generic default for provenance.
     form_schema = {}
-    if request.original_product_id and request.return_claim_description:
+    if request.return_claim_description:
         form_schema = get_cached_schema(
-            request.original_product_id, request.return_claim_description
+            request.original_product_id, request.return_claim_description, request.category
         ) or {}
     if not form_schema:
         form_schema = generic_default_schema(request.category)

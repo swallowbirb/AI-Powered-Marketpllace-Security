@@ -1,12 +1,12 @@
 import api from './api';
 
-export const initiateReturn = async ({ orderId, reasonCode, reasonText }) => {
-  const response = await api.post('/returns', { orderId, reasonCode, reasonText });
+export const initiateReturn = async ({ orderId, reasonCode, reasonText, clarifyingPhotos }) => {
+  const response = await api.post('/returns', { orderId, reasonCode, reasonText, clarifyingPhotos });
   return response.data;
 };
 
-export const submitReturnEvidence = async (itemId, photos) => {
-  const response = await api.post(`/returns/${itemId}/evidence`, { photos });
+export const submitReturnEvidence = async (itemId, photos, fieldImages) => {
+  const response = await api.post(`/returns/${itemId}/evidence`, { photos, fieldImages });
   return response.data;
 };
 

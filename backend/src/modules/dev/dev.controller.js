@@ -182,9 +182,9 @@ const resetReturnData = async (req, res, next) => {
       Grade.deleteMany({ itemId: { $in: itemIds } }),
       LifecycleEvent.deleteMany({ itemId: { $in: itemIds } }),
       ItemLog.deleteMany({ itemId: { $in: itemIds } }),
-      // Returns are keyed by orderId; delete all if no scope, or match by user
+      // Returns are keyed by userId (ObjectId); delete all if no scope, or match by user
       userId || mockClerkId
-        ? Return.deleteMany({ userId: (await User.findOne(userFilter.initiatorUserId ? { _id: userFilter.initiatorUserId } : {}))?.clerkId })
+        ? Return.deleteMany({ userId: userFilter.initiatorUserId })
         : Return.deleteMany({}),
       RoutingDecision.deleteMany({ itemId: { $in: itemIds } }),
       HealthCard.deleteMany({ itemId: { $in: itemIds } }),

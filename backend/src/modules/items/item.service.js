@@ -4,7 +4,8 @@ const ItemLogger = require('../../utils/itemLogger');
 
 // Allowed state machine transitions
 const ALLOWED_TRANSITIONS = {
-  INITIATED: ['EVIDENCE_PENDING', 'CANCELLED'],
+  INITIATED: ['AWAITING_EVIDENCE', 'EVIDENCE_PENDING', 'CANCELLED'],
+  AWAITING_EVIDENCE: ['EVIDENCE_PENDING', 'CANCELLED'],
   EVIDENCE_PENDING: ['GRADING', 'CANCELLED'],
   GRADING: ['GRADED', 'REJECTED'],       // Phase 2 drives these
   GRADED: ['ROUTED'],                     // Phase 4
@@ -141,15 +142,25 @@ const markGraded = async (itemId, grade) => {
 };
 
 /**
- * Attach evidence photos and transition INITIATED → EVIDENCE_PENDING → GRADING.
+ * Attach evidence photos and transition → EVIDENCE_PENDING → GRADING.
  * Fire-and-forgets gradingService.triggerGrading — never throws on grading failure.
+ *
+ * v3.44: accepts an optional field→image mapping from the dynamic Pass-1 form.
+ * When the item has a persisted AI form, required photo fields are gated before
+ * grading (improvement #7). `photos` may be a flat array (back-compat) OR the
+ * caller may pass `fieldImages` = { fieldId: [url,...] }.
+ *
+ * @param {string} itemId
+ * @param {string[]} photos    flat union of all evidence photo URLs
+ * @param {object} actor
+ * @param {object} [opts]      { fieldImages }
  */
-const attachEvidence = async (itemId, photos, actor) => {
+const attachEvidence = async (itemId, photos, actor, opts = {}) => {
   const item = await Item.findById(itemId);
   if (!item) throw new Error('Item not found');
 
   // Allow re-submission if item got stuck mid-transition (e.g. after a previous failed request)
-  const attachableStatuses = ['INITIATED', 'EVIDENCE_PENDING'];
+  const attachableStatuses = ['INITIATED', 'AWAITING_EVIDENCE', 'EVIDENCE_PENDING'];
   if (!attachableStatuses.includes(item.status)) {
     throw new Error(`Cannot attach evidence when item is in status: ${item.status}`);
   }
@@ -157,17 +168,47 @@ const attachEvidence = async (itemId, photos, actor) => {
     throw new Error('At least one photo is required');
   }
 
+  const fieldImages = opts.fieldImages && typeof opts.fieldImages === 'object'
+    ? opts.fieldImages : null;
+
+  // --- Required-field gating (improvement #7) ---
+  // If the item has a persisted AI/generic form, ensure every required photo field
+  // has at least one image before we burn a grading pass.
+  const formSchema = item.evidenceForm && item.evidenceForm.schema;
+  if (fieldImages && formSchema && Array.isArray(formSchema.fields)) {
+    const missing = formSchema.fields
+      .filter((f) => f && f.required && f.type === 'photo')
+      .filter((f) => !(Array.isArray(fieldImages[f.id]) && fieldImages[f.id].length > 0))
+      .map((f) => f.label || f.id);
+    if (missing.length > 0) {
+      const err = new Error(`Missing required evidence: ${missing.join(', ')}`);
+      err.statusCode = 400;
+      err.missingFields = missing;
+      await ItemLogger.log(itemId, 'EVIDENCE_INCOMPLETE',
+        `⚠️ Submission blocked — ${missing.length} required field(s) missing: ${missing.join(', ')}`,
+        { phase: 'evidence', level: 'warn', missing });
+      throw err;
+    }
+  }
+
   // Append photos (avoid duplicates on re-submit)
   const existingUrls = new Set(item.evidencePhotos.map(String));
   const newPhotos = photos.filter((p) => !existingUrls.has(String(p)));
   if (newPhotos.length > 0) item.evidencePhotos.push(...newPhotos);
 
-  await ItemLogger.log(itemId, 'EVIDENCE_SUBMIT', `📤 Evidence submitted: ${photos.length} photo(s)`, {
+  // Persist the field→image mapping so Pass 2 can reference photos by field name.
+  if (fieldImages) {
+    item.evidenceFieldImages = fieldImages;
+  }
+
+  await ItemLogger.log(itemId, 'EVIDENCE_SUBMIT', `📤 Evidence submitted: ${photos.length} photo(s)` +
+    (fieldImages ? ` across ${Object.keys(fieldImages).length} form field(s)` : ''), {
     photoCount: photos.length,
+    fieldCount: fieldImages ? Object.keys(fieldImages).length : 0,
   });
 
   // Transition to EVIDENCE_PENDING only if not already past it
-  if (item.status === 'INITIATED') {
+  if (item.status === 'INITIATED' || item.status === 'AWAITING_EVIDENCE') {
     item.status = 'EVIDENCE_PENDING';
     await item.save();
     await appendEvent(itemId, 'EVIDENCE_SUBMITTED', actor, { photoCount: photos.length });
@@ -183,13 +224,21 @@ const attachEvidence = async (itemId, photos, actor) => {
   await appendEvent(itemId, 'GRADING', actor, { triggeredAt: new Date() });
   await ItemLogger.log(itemId, 'PASS2_START', '⚙️ Starting AI grading analysis...', { phase: 'request' });
 
+  // Combine clarifying photos (from the claim step) with the submitted evidence so
+  // Pass 2 reasons over everything the user provided.
+  const allPhotos = Array.from(new Set([
+    ...(item.clarifyingPhotos || []).map(String),
+    ...item.evidencePhotos.map(String),
+  ]));
+
   // Fire-and-forget grading pipeline (Phase 2 implements this)
   try {
     const gradingService = require('../grading/grading.service');
     gradingService
       .triggerGrading(item._id.toString(), {
         userId: item.initiatorUserId?.toString(),
-        evidencePhotos: item.evidencePhotos,
+        evidencePhotos: allPhotos,
+        fieldImages: item.evidenceFieldImages || {},
         category: item.category,
         reason: item.reasonText || item.description || undefined,
         intakePath: item.intakePath === 'return' ? 'returns' : 'sell-used',
@@ -218,6 +267,55 @@ const attachEvidence = async (itemId, photos, actor) => {
       });
   } catch (err) {
     console.warn('[items] gradingService not yet implemented — skipping trigger');
+  }
+
+  return item;
+};
+
+/**
+ * Kick off dynamic Pass-1 form generation for an item at the CLAIM step (v3.44).
+ *
+ * Called by the intake services right after the Item is created. Transitions
+ * INITIATED → AWAITING_EVIDENCE and fires the (fire-and-forget) Pass-1 request so
+ * the form is product- and claim-specific by the time the user reaches the
+ * evidence screen.
+ *
+ * @param {string} itemId
+ * @param {object} actor
+ * @param {object} [opts] { clarifyingPhotos }
+ */
+const requestEvidenceForm = async (itemId, actor, opts = {}) => {
+  const item = await Item.findById(itemId);
+  if (!item) throw new Error('Item not found');
+
+  // Persist any clarifying photos captured at the claim step.
+  const clarifying = Array.isArray(opts.clarifyingPhotos) ? opts.clarifyingPhotos.filter(Boolean) : [];
+  if (clarifying.length > 0) {
+    item.clarifyingPhotos = clarifying;
+  }
+
+  // Move into AWAITING_EVIDENCE so the dynamic form is a real, enforced stop.
+  if (item.status === 'INITIATED') {
+    item.status = 'AWAITING_EVIDENCE';
+    item.set('evidenceForm.status', 'pending');
+    await item.save();
+    await appendEvent(itemId, 'AWAITING_EVIDENCE', actor, { clarifyingPhotoCount: clarifying.length });
+    await ItemLogger.log(itemId, 'STATUS_UPDATE', '📊 Status changed to AWAITING_EVIDENCE', { phase: 'pass1' });
+  } else {
+    await item.save();
+  }
+
+  // Fire-and-forget Pass 1; never block intake on it.
+  try {
+    const gradingService = require('../grading/grading.service');
+    gradingService.startFormGeneration(itemId, {
+      productId: item.originalProductId?.toString() || null,
+      reason: item.reasonText || item.description || undefined,
+      category: item.category,
+      initialPhotos: clarifying,
+    });
+  } catch (err) {
+    console.warn(`[items] could not start form generation for ${itemId}: ${err.message}`);
   }
 
   return item;
@@ -272,6 +370,8 @@ const getItemStatus = async (itemId) => {
     category: item.category || null,
     reasonCode: item.reasonCode || null,
     reasonText: item.reasonText || null,
+    evidenceForm: item.evidenceForm || null,
+    clarifyingPhotos: item.clarifyingPhotos || [],
     grade: grade || null,
     routingDecision: null, // populated in P4
     createdAt: item.createdAt,
@@ -283,6 +383,7 @@ module.exports = {
   createItem,
   transitionStatus,
   attachEvidence,
+  requestEvidenceForm,
   markGraded,
   getItemById,
   getItemsByUser,
