@@ -65,6 +65,44 @@ async def try_fetch_image_bytes(
     into a visible, actionable log line.
     """
     started = time.perf_counter()
+
+    # If this is an S3 URL, download via authenticated GetObject. The bucket is
+    # private — the presigned URL only authorizes the PUT upload, so a plain HTTP
+    # GET on the bare object URL returns 403. boto3 uses the ML service's creds.
+    s3_loc = parse_s3_url(url)
+    if s3_loc is not None:
+        bucket, key = s3_loc
+        try:
+            from app.services.s3_download import s3_download_service
+            data = await asyncio.to_thread(s3_download_service.get_object_bytes, bucket, key)
+            elapsed = round((time.perf_counter() - started) * 1000, 1)
+            if trace is not None:
+                kb = round(len(data) / 1024, 1)
+                trace.add(
+                    phase, "IMAGE_FETCH",
+                    f"📥 Fetched {label}: {kb} KB (authenticated S3 GetObject)",
+                    level="success", duration_ms=elapsed,
+                    url=_short_url(url), bytes=len(data), source="s3:getobject",
+                )
+            return data
+        except Exception as exc:  # noqa: BLE001
+            elapsed = round((time.perf_counter() - started) * 1000, 1)
+            aws_code = None
+            try:
+                aws_code = getattr(exc, "response", {}).get("Error", {}).get("Code")
+            except Exception:  # noqa: BLE001
+                aws_code = None
+            if trace is not None:
+                trace.error(
+                    phase, "IMAGE_FETCH",
+                    f"❌ Could not fetch {label} via S3 GetObject "
+                    f"({aws_code or type(exc).__name__}) — the model will run WITHOUT this image.",
+                    exc=exc, duration_ms=elapsed, url=_short_url(url),
+                    aws_error_code=aws_code, source="s3:getobject",
+                )
+            logger.warning("Failed to fetch S3 image %s/%s: %s", bucket, key, exc)
+            return None
+
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
             resp = await client.get(url)

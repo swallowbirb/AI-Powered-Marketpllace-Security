@@ -7,6 +7,14 @@ const Product = require('../products/product.model');
 const Order = require('../orders/order.model');
 const Review = require('../reviews/review.model');
 const BrandEnrollment = require('../brands/brandEnrollment.model');
+const Item = require('../items/item.model');
+const ItemLog = require('../items/itemLog.model');
+const Grade = require('../grading/grading.model');
+const Return = require('../returns/return.model');
+const LifecycleEvent = require('../lifecycle/lifecycle.model');
+const RoutingDecision = require('../routing/routing.model');
+const HealthCard = require('../healthCard/healthCard.model');
+const TrustProfile = require('../trust/trust.model');
 
 // Erase all data except base mock users
 const eraseData = async (req, res, next) => {
@@ -118,8 +126,96 @@ const saveData = async (req, res, next) => {
   }
 };
 
+/**
+ * DEV ONLY — Reset all return/grading pipeline data so you can re-run the
+ * return flow on the same product without hitting "already returned" guards.
+ *
+ * Clears: Items · Grades · LifecycleEvents · ItemLogs · Returns ·
+ *         RoutingDecisions · HealthCards · TrustProfiles
+ *
+ * Optionally scoped to a single user via ?userId=<mongoId> or ?mockClerkId=<id>.
+ * Without a scope param it wipes ALL pipeline data (full reset).
+ *
+ * Orders and Products are intentionally left untouched.
+ */
+const resetReturnData = async (req, res, next) => {
+  try {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(403).json({ success: false, message: 'Not allowed in production' });
+    }
+
+    let userFilter = {};          // empty → match everything
+    let scopeLabel = 'all users';
+
+    // Optional per-user scope
+    const { userId, mockClerkId } = req.query;
+    if (userId || mockClerkId) {
+      let user = null;
+      if (userId) {
+        user = await User.findById(userId).lean();
+      } else if (mockClerkId) {
+        const clerkId = mockClerkId.startsWith('mock_') ? mockClerkId : `mock_${mockClerkId}`;
+        user = await User.findOne({ clerkId }).lean();
+      }
+      if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+      userFilter = { initiatorUserId: user._id };
+      scopeLabel = `user ${user._id} (${user.email || mockClerkId || userId})`;
+    }
+
+    // Find items matching the scope so we can cascade-delete related docs by itemId
+    const items = await Item.find(userFilter).select('_id').lean();
+    const itemIds = items.map((i) => i._id);
+
+    const [
+      itemsDeleted,
+      gradesDeleted,
+      eventsDeleted,
+      logsDeleted,
+      returnsDeleted,
+      routingDeleted,
+      healthCardsDeleted,
+      trustDeleted,
+    ] = await Promise.all([
+      Item.deleteMany(userFilter),
+      Grade.deleteMany({ itemId: { $in: itemIds } }),
+      LifecycleEvent.deleteMany({ itemId: { $in: itemIds } }),
+      ItemLog.deleteMany({ itemId: { $in: itemIds } }),
+      // Returns are keyed by orderId; delete all if no scope, or match by user
+      userId || mockClerkId
+        ? Return.deleteMany({ userId: (await User.findOne(userFilter.initiatorUserId ? { _id: userFilter.initiatorUserId } : {}))?.clerkId })
+        : Return.deleteMany({}),
+      RoutingDecision.deleteMany({ itemId: { $in: itemIds } }),
+      HealthCard.deleteMany({ itemId: { $in: itemIds } }),
+      // TrustProfiles are per-user; only wipe if scoped
+      userId || mockClerkId
+        ? TrustProfile.deleteMany({ userId: userFilter.initiatorUserId })
+        : TrustProfile.deleteMany({}),
+    ]);
+
+    res.status(200).json({
+      success: true,
+      message: `Return pipeline data reset for ${scopeLabel}.`,
+      deleted: {
+        items: itemsDeleted.deletedCount,
+        grades: gradesDeleted.deletedCount,
+        lifecycleEvents: eventsDeleted.deletedCount,
+        itemLogs: logsDeleted.deletedCount,
+        returns: returnsDeleted.deletedCount,
+        routingDecisions: routingDeleted.deletedCount,
+        healthCards: healthCardsDeleted.deletedCount,
+        trustProfiles: trustDeleted.deletedCount,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   eraseData,
   populateData,
-  saveData
+  saveData,
+  resetReturnData,
 };

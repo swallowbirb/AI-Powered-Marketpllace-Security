@@ -9,7 +9,7 @@ Three cheap signals run before any LLM call:
   3. Rekognition — web/label signal via moderation/label detection => SOFT signal.
 
 Outcome classification:
-  * HARD  -> short-circuit the pipeline, skip both Bedrock passes.
+  * HARD  -> short-circuit the pipeline, skip both Gemini passes.
   * SOFT  -> annotate the summary, continue.
   * CLEAN -> no signal.
 

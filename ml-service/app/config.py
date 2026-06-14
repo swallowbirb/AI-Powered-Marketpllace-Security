@@ -36,16 +36,18 @@ class Settings(BaseSettings):
     aws_region: str = "ap-south-1"
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
-    bedrock_region: str = "us-east-1"
-    bedrock_model_primary: str = "amazon.nova-pro-v1:0"
-    bedrock_model_fallback: str = "anthropic.claude-3-5-sonnet-20241022-v2:0"
     s3_bucket_name: str = ""
     kms_key_id: str = ""
     ml_service_url: str = "http://localhost:8000"
 
+    # --- Gemini (LLM provider for Pass 1 + Pass 2) ---
+    gemini_api_key: str = ""
+    gemini_model_primary: str = "gemini-2.5-flash"
+    gemini_model_fallback: str = "gemini-2.5-flash-lite"
+
     # --- Phase 2 grading tunables ---
     grade_cache_ttl_seconds: int = 3600          # Pass-1 form-schema cache TTL
-    bedrock_timeout_seconds: int = 10            # per-attempt Bedrock timeout (Req 11.1/11.2)
+    gemini_timeout_seconds: int = 10             # per-attempt Gemini timeout (Req 11.1/11.2)
     pass2_timeout_seconds: int = 20              # Pass-2 synthesis budget (Req 7.7)
     analysis_timeout_seconds: int = 60           # asyncio.gather per-task budget (Req 6.1)
     phash_hamming_threshold: int = 10            # hard-fraud perceptual-hash distance (Req 2.2)
