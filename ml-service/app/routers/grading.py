@@ -4,9 +4,11 @@ from fastapi import APIRouter, HTTPException
 
 from app.models.schemas import (
     GradingRequest, GradingResponse, DefectDetail, FormRequest, FormResponse,
+    ClaimValidationRequest, ClaimValidationResponse,
 )
 from app.services import fraud_preflight
-from app.services.analysis_orchestrator import run_analysis
+from app.services.evidence_inspector import build_analysis_summary, inspect_photo
+from app.services.claim_validator import validate_claim
 from app.services.grade_synthesizer import synthesize_grade, GradeSynthesisError
 from app.services.form_generator import generate_form, get_cached_schema, generic_default_schema
 from app.services.prompt_loader import PromptError, load_base_prompt
@@ -39,7 +41,10 @@ async def generate_evidence_form(request: FormRequest):
         initial_photos=request.initial_photos,
         listing_image_urls=request.listing_image_urls,
         listing_data=request.listing_data,
+        image_hints=request.image_hints or [],
         seller_prompt=request.seller_prompt,
+        base_prompt=request.base_prompt,
+        category_prompt=request.category_prompt,
         trace=trace,
     )
     return FormResponse(
@@ -47,6 +52,25 @@ async def generate_evidence_form(request: FormRequest):
         status=result["status"],
         cached=result["cached"],
         key=result["key"],
+        trace=trace.to_list(),
+    )
+
+
+@router.post("/validate-claim", response_model=ClaimValidationResponse)
+async def validate_claim_endpoint(request: ClaimValidationRequest):
+    """Cheap text-only plausibility gate run BEFORE Pass-1 (v2.34)."""
+    trace = PipelineTrace(item_id=None)
+    result = await validate_claim(
+        request.reason,
+        category=request.category,
+        product_title=request.product_title,
+        listing_data=request.listing_data,
+        trace=trace,
+    )
+    return ClaimValidationResponse(
+        plausible=result["plausible"],
+        reason=result.get("reason"),
+        checked=result.get("checked", True),
         trace=trace.to_list(),
     )
 
@@ -108,20 +132,41 @@ async def grade_item(request: GradingRequest):
             trace=trace.to_list(),
         )
 
-    # --- Parallel specialized analysis (Req 6) ---
-    summary = await run_analysis(
-        photos=photos,
-        listing_images=request.listing_image_urls,
-        fraud_outcome=fraud,
+    # --- Assemble Pass-2 summary from per-photo Evidence Inspector fragments (v2.34) ---
+    fragments = [f.model_dump() if hasattr(f, "model_dump") else dict(f)
+                 for f in (request.fragments or [])]
+
+    # Legacy / standalone fallback: no fragments supplied -> inspect the flat photo
+    # list once now so the merge-contract (POST /grade with just photos) still works.
+    if not fragments and photos:
+        trace.info("inspect", "FRAGMENTS_FALLBACK",
+                   f"🔁 No pre-computed fragments supplied — inspecting {len(photos)} photo(s) inline "
+                   "(legacy/standalone path) before synthesis.")
+        for url in photos:
+            res = await inspect_photo(
+                url, listing_data=request.listing_data if hasattr(request, "listing_data") else None,
+                reason=request.return_claim_description, category=request.category,
+                seller_prompt=request.seller_prompt, base_prompt=request.base_prompt,
+                category_prompt=request.category_prompt, trace=trace)
+            res["image_url"] = url
+            fragments.append(res)
+
+    summary = build_analysis_summary(
+        fragments,
+        fraud=fraud,
         category=request.category,
         reason=request.return_claim_description,
-        field_images=request.field_images,
         trace=trace,
     )
 
     # --- Pass 2 synthesis (Req 7) ---
     try:
-        grade = await synthesize_grade(summary, category=request.category, trace=trace)
+        grade = await synthesize_grade(
+            summary, category=request.category,
+            seller_prompt=request.seller_prompt,
+            base_prompt=request.base_prompt,
+            category_prompt=request.category_prompt,
+            trace=trace)
     except GradeSynthesisError as exc:
         logger.error("Grade synthesis failed: %s", exc)
         # Carry the full trace to the backend inside the error detail so the real

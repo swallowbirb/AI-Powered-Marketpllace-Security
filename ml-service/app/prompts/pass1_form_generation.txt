@@ -13,6 +13,7 @@ INPUT CONTEXT:
 - Category: {category}
 - Product listing data (the catalog product this item corresponds to — title,
   description, brand, condition, price, etc.): {listing_data}
+{image_hints_section}
 
 ATTACHED IMAGES (may be empty): one or more reference photos of the catalog product
 (showing what it looks like when new) may be attached first, followed by any
@@ -32,6 +33,7 @@ Produce a Form_Schema as a JSON object with this exact shape:
       "required": true,
       "guidance": "<what the user should capture or enter>",
       "expected_subject": "<for type=photo ONLY: a short noun phrase describing exactly what the photo must show, e.g. 'the sole of a shoe', 'the camera sensor', 'the brand/serial label'. Used to auto-verify the upload shows the right thing.>",
+      "validation_criteria": "<for type=photo ONLY: one sentence stating what makes an upload ACCEPTABLE for this field, so the inspector can reject off-target photos. e.g. for a 'Front screen cracked' field: 'Must clearly show the front screen of the phone, close enough to judge whether the glass is cracked.'>",
       "options": ["<only for type=select>"]
     }}
   ],
@@ -41,7 +43,8 @@ Produce a Form_Schema as a JSON object with this exact shape:
 RULES:
 - Tailor fields to the reason and category. Always include at least one photo field
   for any visible defect the user mentions.
-- For EVERY field of type "photo" you MUST include a concise "expected_subject".
+- For EVERY field of type "photo" you MUST include both "expected_subject" and a concrete
+  "validation_criteria" (the acceptance test the inspector uses to reject wrong photos).
 - Do NOT request evidence already clearly visible in the attached clarifying photos.
 - Keep the form focused: at most 8 photo fields. Prefer the few highest-signal shots.
 - Return ONLY the JSON object. No prose, no markdown, no code fences.

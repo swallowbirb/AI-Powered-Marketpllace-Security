@@ -16,11 +16,11 @@ const initiateFromOrder = async (req, res, next) => {
 
 const submitEvidence = async (req, res, next) => {
   try {
-    const { photos, fieldImages } = req.body;
+    const { photos, fieldImages, additionalNotes } = req.body;
     if (!photos || !Array.isArray(photos) || photos.length === 0) {
       return res.status(400).json({ success: false, message: 'At least one photo is required' });
     }
-    const item = await secondhandService.submitEvidence(req.user._id, req.params.itemId, photos, fieldImages);
+    const item = await secondhandService.submitEvidence(req.user._id, req.params.itemId, photos, fieldImages, additionalNotes);
     res.status(200).json({ success: true, data: { itemId: item._id, status: item.status } });
   } catch (err) {
     if (err.message === 'Forbidden') return res.status(403).json({ success: false, message: 'Forbidden' });

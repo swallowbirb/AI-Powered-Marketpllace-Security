@@ -79,15 +79,50 @@ class CLIPService:
             return {"matches": False, "confidence": 0.0, "available": False}
         import torch
 
-        labels = [f"a photo of {expected_subject}", "a photo of something else"]
+        # Richer contrastive prompt set. The two-prompt softmax (positive vs
+        # generic negative) almost always picks the specific label when the
+        # subject vaguely matches; adding plausible distractors forces the
+        # model to actually discriminate.
+        positive = f"a photo of {expected_subject}"
+        labels = [
+            positive,
+            "a photo of an unrelated object",
+            "a photo of a different part of the same item",
+            "a blurry or unrecognisable photo",
+        ]
+
+        # State-aware verifier: when the subject describes a STATE the camera
+        # cannot fake (a powered-on screen, a lit display), zero-shot CLIP is
+        # too coarse — a powered-OFF phone is still "a photo of an Oppo Reno
+        # 11" so it scores high. Add an explicit OFF/ON pair so the contrast
+        # is visible to the softmax.
+        subj_l = expected_subject.lower()
+        is_powered_on_subject = any(
+            kw in subj_l
+            for kw in (
+                "powered on", "powered-on", "screen on", "screen turned on",
+                "lit screen", "displaying", "turned on", "switched on",
+                "showing the home screen", "showing content",
+            )
+        )
+        if is_powered_on_subject:
+            labels.append("a photo of a phone with the screen turned off, dark and black")
+
         inputs = processor(text=labels, images=image, return_tensors="pt", padding=True)
         with torch.no_grad():
             outputs = model(**inputs)
             probs = outputs.logits_per_image.softmax(dim=1)[0].cpu().numpy()
+
         confidence = float(probs[0])
+        winning_idx = int(np.argmax(probs))
+        winning_label = labels[winning_idx]
+        matches = winning_idx == 0 and confidence >= settings.clip_subject_match_threshold
+
         return {
-            "matches": confidence >= settings.clip_subject_match_threshold,
+            "matches": matches,
             "confidence": confidence,
+            "winning_label": winning_label,
+            "label_scores": {labels[i]: float(probs[i]) for i in range(len(labels))},
             "available": True,
         }
 

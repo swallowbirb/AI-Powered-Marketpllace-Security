@@ -37,6 +37,33 @@ const initiateReturn = async (userId, { orderId, reasonCode, reasonText, clarify
   const productTitle = isCatalog ? order.catalogEntryId?.title : order.productId?.title;
   const productCategory = isCatalog ? order.catalogEntryId?.category : order.productId?.category;
 
+  // v2.34 — cheap claim plausibility gate BEFORE any expensive grading work. Rejects
+  // claims that clearly can't pertain to this product (e.g. "fridge not cooling" on a
+  // phone). Fail-open: ML outage or vague claims pass through.
+  if (reasonText && reasonText.trim().length >= 6) {
+    try {
+      const gradingService = require('../grading/grading.service');
+      const check = await gradingService.validateClaim({
+        reason: reasonText,
+        category: productCategory,
+        productTitle,
+        productId: isCatalog ? null : order.productId?._id,
+      });
+      if (check.checked && check.plausible === false) {
+        const err = new Error(
+          check.reason ||
+          'This description does not seem to match the product you are returning. Please describe the actual issue with this item.'
+        );
+        err.statusCode = 400;
+        err.code = 'CLAIM_IMPLAUSIBLE';
+        throw err;
+      }
+    } catch (e) {
+      if (e.code === 'CLAIM_IMPLAUSIBLE') throw e;
+      // Any other failure → fail open, continue with the return.
+    }
+  }
+
   // Snapshot trust tier (Phase 3 fills this — graceful fallback)
   let trustTierAtSubmission = null;
   try {
@@ -92,7 +119,7 @@ const initiateReturn = async (userId, { orderId, reasonCode, reasonText, clarify
  * Attach evidence photos and trigger grading.
  * v3.44 — accepts an optional field→image mapping from the dynamic form.
  */
-const submitEvidence = async (userId, itemId, photos, fieldImages) => {
+const submitEvidence = async (userId, itemId, photos, fieldImages, additionalNotes) => {
   const item = await require('../items/item.model').findById(itemId).lean();
   if (!item) throw new Error('Item not found');
   if (item.initiatorUserId.toString() !== userId.toString()) throw new Error('Forbidden');
@@ -103,7 +130,7 @@ const submitEvidence = async (userId, itemId, photos, fieldImages) => {
     return item;
   }
 
-  return itemService.attachEvidence(itemId, photos, { userId, role: 'buyer' }, { fieldImages });
+  return itemService.attachEvidence(itemId, photos, { userId, role: 'buyer' }, { fieldImages, additionalNotes });
 };
 
 /**

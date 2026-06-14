@@ -17,6 +17,13 @@ router.get('/form/:itemId', gradingController.getForm);
 // Per-photo validation proxy (v3.44) — inline "right part? in focus?" feedback.
 router.post('/validate-photo', gradingController.validatePhoto);
 
+// Per-upload Evidence Inspection (v2.34) — accept/reupload + persists a fragment.
+router.post('/inspect-photo', gradingController.inspectPhoto);
+
+// Per-field batched Evidence Inspection (v2.35) — the user's "Submit Field" click.
+// One LLM call over the whole field's photo set; persists ONE field-level fragment.
+router.post('/verify-field', gradingController.verifyField);
+
 // Flagged grades for the seller/admin dashboard (Req 9.4 / 9.5).
 router.get(
   '/flagged',

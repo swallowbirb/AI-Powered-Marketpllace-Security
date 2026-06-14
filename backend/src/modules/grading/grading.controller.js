@@ -111,4 +111,52 @@ const validatePhoto = async (req, res, next) => {
   }
 };
 
-module.exports = { triggerGrading, getGrade, health, getFlaggedGrades, startForm, getForm, validatePhoto };
+/**
+ * POST /api/grading/inspect-photo — per-upload Evidence Inspection (v2.34).
+ * Body: { photoUrl, itemId, fieldId, fieldLabel, expectedSubject, reason, category, productId }
+ * Returns the inspection result (accepted, reupload_reason, clarity, ...). On accept,
+ * a fragment is persisted server-side.
+ */
+const inspectPhoto = async (req, res, next) => {
+  try {
+    const { photoUrl, itemId, fieldId, fieldLabel, expectedSubject, validationCriteria,
+      reason, category, productId } = req.body || {};
+    if (!photoUrl) {
+      return res.status(400).json({ success: false, message: 'photoUrl is required' });
+    }
+    const result = await gradingService.inspectPhoto({
+      photoUrl, itemId, fieldId, fieldLabel, expectedSubject, validationCriteria,
+      reason, category, productId,
+    });
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * POST /api/grading/verify-field — per-field batched Evidence Inspection (v2.35).
+ * Body: { itemId, fieldId, fieldLabel, expectedSubject, validationCriteria,
+ *         photoUrls: [String], reason, category, productId }
+ * Returns the field-level inspection result (accepted, reupload_reason,
+ *   per_photo, missing_views, observations, ...). On accept, ONE field-level
+ *   fragment is persisted server-side (replacing any prior fragments for this fieldId).
+ */
+const verifyField = async (req, res, next) => {
+  try {
+    const { itemId, fieldId, fieldLabel, expectedSubject, validationCriteria,
+      photoUrls, reason, category, productId } = req.body || {};
+    if (!Array.isArray(photoUrls) || photoUrls.length === 0) {
+      return res.status(400).json({ success: false, message: 'photoUrls is required (at least one)' });
+    }
+    const result = await gradingService.verifyField({
+      itemId, fieldId, fieldLabel, expectedSubject, validationCriteria,
+      photoUrls, reason, category, productId,
+    });
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+module.exports = { triggerGrading, getGrade, health, getFlaggedGrades, startForm, getForm, validatePhoto, inspectPhoto, verifyField };

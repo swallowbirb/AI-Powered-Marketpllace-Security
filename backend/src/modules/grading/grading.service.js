@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const Grade = require('./grading.model');
 const { emitGraded } = require('./lifecycleEmitter');
 const ItemLogger = require('../../utils/itemLogger');
+const promptService = require('../prompts/prompt.service');
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:8000';
 const ML_TIMEOUT_MS = parseInt(process.env.ML_TIMEOUT_MS || '120000', 10); // analysis fanout alone can take 60s; keep well above internal budgets
@@ -185,10 +186,28 @@ const buildFallbackGrade = (payload, failureReason) => ({
 });
 
 /**
+ * Resolve the prompt overlays for a grading call (v2.34): admin base + admin category
+ * (DB-editable, with file/default fallback) + the seller's per-product instructions.
+ * Never throws — returns whatever resolves, so a prompt-store hiccup can't break grading.
+ */
+const _resolvePrompts = async (category, sellerPrompt) => {
+  const out = { base_prompt: undefined, category_prompt: undefined, seller_prompt: sellerPrompt || undefined };
+  try {
+    out.base_prompt = await promptService.getBasePrompt();
+    const cat = await promptService.getCategoryPrompt(category);
+    if (cat) out.category_prompt = cat;
+  } catch (err) {
+    console.warn(`[grading] prompt resolution failed (using ML defaults): ${err.message}`);
+  }
+  return out;
+};
+
+/**
  * Call the ML_Service grading pipeline. Returns { data, ms } where ms is the
  * round-trip latency. Throws on timeout / unreachable / non-2xx.
  */
 const callMlGrade = async (payload) => {
+  const prompts = await _resolvePrompts(payload.category, payload.sellerPrompt);
   const body = {
     item_id: payload.itemId,
     photos: payload.imageUrls,
@@ -198,6 +217,10 @@ const callMlGrade = async (payload) => {
     listing_image_urls: payload.listingImageUrls || [],
     catalog_hashes: payload.catalogHashes || [],
     field_images: payload.fieldImages || {},
+    fragments: payload.fragments || [],
+    base_prompt: prompts.base_prompt,
+    category_prompt: prompts.category_prompt,
+    seller_prompt: prompts.seller_prompt,
   };
 
   const startedAt = Date.now();
@@ -283,30 +306,77 @@ const triggerGrading = async (itemId, options = {}) => {
     catalogHashes: options.catalogHashes || [],
   };
 
-  // Backfill listing reference photos from the catalog when the caller didn't
-  // supply them. The visual-comparison analyses (OpenCV colour delta, CLIP
-  // similarity) need the original product photos as a reference; without them
-  // those steps are skipped. attachEvidence only passes originalProductId, so we
-  // resolve the product's catalog images here.
-  if (payload.listingImageUrls.length === 0 && payload.productId &&
-      mongoose.Types.ObjectId.isValid(payload.productId)) {
+  // Backfill listing reference photos + the seller's per-product grading instructions
+  // from the catalog. attachEvidence only passes originalProductId, so we resolve the
+  // product's catalog images (visual reference) and gradingInstructions (seller prompt)
+  // here.
+  if (payload.productId && mongoose.Types.ObjectId.isValid(payload.productId)) {
     try {
       const Product = require('../products/product.model');
-      const product = await Product.findById(payload.productId).select('images').lean();
-      if (product && Array.isArray(product.images) && product.images.length > 0) {
-        payload.listingImageUrls = product.images;
-        await ItemLogger.log(itemId, 'ANALYSIS_REFERENCE',
-          `🖼️ Loaded ${product.images.length} listing reference photo(s) from the catalog ` +
-          `for visual comparison.`,
-          { phase: 'request', level: 'info', referenceCount: product.images.length,
-            productId: String(payload.productId) }
-        );
+      const product = await Product.findById(payload.productId)
+        .select('images gradingInstructions').lean();
+      if (product) {
+        if (payload.listingImageUrls.length === 0 &&
+            Array.isArray(product.images) && product.images.length > 0) {
+          payload.listingImageUrls = product.images;
+          await ItemLogger.log(itemId, 'ANALYSIS_REFERENCE',
+            `🖼️ Loaded ${product.images.length} listing reference photo(s) from the catalog ` +
+            `for visual comparison.`,
+            { phase: 'request', level: 'info', referenceCount: product.images.length,
+              productId: String(payload.productId) }
+          );
+        }
+        if (product.gradingInstructions && product.gradingInstructions.trim()) {
+          payload.sellerPrompt = product.gradingInstructions.trim();
+        }
       }
     } catch (err) {
       await ItemLogger.log(itemId, 'ANALYSIS_REFERENCE',
         `⚠️ Could not load catalog reference photos — ${err.message || err}`,
         { phase: 'request', level: 'warn', productId: String(payload.productId) }
       );
+    }
+  }
+
+  // --- Gather stored Evidence Inspector fragments (v2.34) ---
+  // These were written at upload time. Pass 2 synthesizes from them (no raw-image
+  // re-analysis). If none exist (legacy/standalone path), the ML service inspects
+  // the flat photo list inline so the contract still works.
+  if ((!payload.fragments || payload.fragments.length === 0) &&
+      mongoose.isValidObjectId(itemId)) {
+    try {
+      const item = await Item.findById(itemId).select('evidenceFragments').lean();
+      const stored = (item && item.evidenceFragments) || [];
+      payload.fragments = stored
+        .filter((f) => f.accepted !== false)
+        .map((f) => ({
+          field_id: f.fieldId,
+          field_label: f.fieldLabel,
+          // v2.34 single-photo shape
+          image_url: f.imageUrl,
+          // v2.35 multi-photo shape (only present on field-level fragments)
+          image_urls: Array.isArray(f.imageUrls) ? f.imageUrls : undefined,
+          per_photo: Array.isArray(f.perPhoto) ? f.perPhoto : undefined,
+          missing_views: Array.isArray(f.missingViews) ? f.missingViews : undefined,
+          ocr_text_per_photo: f.ocrTextPerPhoto || undefined,
+          preflight_per_photo: f.preflightPerPhoto || undefined,
+          // Common evidence fields
+          clarity: f.clarity,
+          subject_match: f.subjectMatch,
+          identity_match: f.identityMatch,
+          observations: f.observations || [],
+          ocr_text: f.ocrText,
+          condition_signals: f.conditionSignals || [],
+          preflight: f.preflight || {},
+          inspector_status: f.inspectorStatus,
+        }));
+      if (payload.fragments.length > 0) {
+        await ItemLogger.log(itemId, 'GRADING_REQUEST',
+          `🧩 Loaded ${payload.fragments.length} pre-computed evidence fragment(s) for synthesis.`,
+          { phase: 'request', fragmentCount: payload.fragments.length });
+      }
+    } catch (err) {
+      console.warn(`[grading] could not load fragments for ${itemId}: ${err.message}`);
     }
   }
 
@@ -572,11 +642,12 @@ const startFormGeneration = async (itemId, { productId, reason, category, initia
   // ever saw `Product listing data: {}` and 0 images.
   let listingData = {};
   let listingImageUrls = [];
+  let sellerPrompt;
   if (productId && mongoose.Types.ObjectId.isValid(productId)) {
     try {
       const Product = require('../products/product.model');
       const product = await Product.findById(productId)
-        .select('title description category brandName condition price images')
+        .select('title description category brandName condition price images gradingInstructions imageHints')
         .lean();
       if (product) {
         listingData = {
@@ -588,11 +659,20 @@ const startFormGeneration = async (itemId, { productId, reason, category, initia
           price: product.price,
         };
         listingImageUrls = Array.isArray(product.images) ? product.images.slice(0, 4) : [];
+        if (product.gradingInstructions && product.gradingInstructions.trim()) {
+          sellerPrompt = product.gradingInstructions.trim();
+        }
+        // Pass seller-defined per-image hints to Pass-1 so it generates dedicated fields.
+        if (Array.isArray(product.imageHints) && product.imageHints.length > 0) {
+          listingData.imageHints = product.imageHints;
+        }
       }
     } catch (err) {
       console.warn(`[grading] could not load product ${productId} for Pass 1: ${err.message}`);
     }
   }
+
+  const prompts = await _resolvePrompts(category, sellerPrompt);
 
   await ItemLogger.log(itemId, 'PASS1_START',
     `📝 Pass 1 form generation requested (category=${category || 'unknown'}, ` +
@@ -611,6 +691,10 @@ const startFormGeneration = async (itemId, { productId, reason, category, initia
       initial_photos: initialPhotos || [],
       listing_image_urls: listingImageUrls,
       listing_data: listingData,
+      image_hints: listingData.imageHints || [],
+      base_prompt: prompts.base_prompt,
+      category_prompt: prompts.category_prompt,
+      seller_prompt: prompts.seller_prompt,
     }, { timeout: ML_TIMEOUT_MS });
     const ms = Date.now() - startedAt;
 
@@ -682,17 +766,92 @@ const getForm = async (itemId) => {
  * Proxy a single-photo validation to the ML service (v3.44, improvement #2).
  * Used by the evidence form to give inline "right part? in focus?" feedback,
  * passing the form field's expected_subject through to CLIP subject match.
+ *
+ * Logs the start/result and replays the ML service's per-step trace (image
+ * fetch, OpenCV scores, CLIP confidence) into ItemLogger so the Developer
+ * Logs sidebar shows EVERY AI tool call — not just the final pass/fail badge.
+ *
  * Never throws — returns a permissive result if the ML service is unreachable.
  */
 const validatePhoto = async ({ photoUrl, itemId, expectedSubject }) => {
+  const startedAt = Date.now();
+
+  if (itemId) {
+    await ItemLogger.log(
+      itemId,
+      'PHOTO_VALIDATION_START',
+      `🔍 Validating photo${expectedSubject ? ` (expected: ${expectedSubject})` : ''}…`,
+      { phase: 'evidence', photoUrl, expectedSubject }
+    );
+  }
+
   try {
     const resp = await axios.post(`${ML_SERVICE_URL}/vision/validate-photo`, {
       photo_url: photoUrl,
       item_id: itemId,
       expected_subject: expectedSubject || undefined,
-    }, { timeout: 15000 });
-    return resp.data;
+    }, {
+      // First call after a cold start pays a one-time CLIP model-load tax
+      // (~10-15s on CPU). Steady-state calls are ~100ms. 30s is a safe
+      // ceiling that avoids false "Looks good" badges from a premature abort.
+      timeout: 30000,
+    });
+
+    // Replay the ML service's internal step-by-step trace into the dev-log
+    // stream — image fetch, OpenCV scores, CLIP subject match — same shape
+    // as /grade so the sidebar is uniform.
+    if (itemId && Array.isArray(resp.data?.trace) && resp.data.trace.length > 0) {
+      await ItemLogger.ingestTrace(itemId, resp.data.trace, { source: 'ml' });
+    }
+
+    if (itemId) {
+      const issues = Array.isArray(resp.data?.issues) ? resp.data.issues : [];
+      const isValid = !!resp.data?.is_valid;
+      await ItemLogger.log(
+        itemId,
+        'PHOTO_VALIDATION_RESULT',
+        isValid
+          ? '✅ Photo passed all checks.'
+          : `⚠️ Photo flagged: ${issues.join(', ') || 'unknown issue'}`,
+        {
+          phase: 'evidence',
+          level: isValid ? 'success' : 'warn',
+          durationMs: Date.now() - startedAt,
+          isValid,
+          issues,
+          blurScore: resp.data?.blur_score,
+          brightnessScore: resp.data?.brightness_score,
+          expectedSubject,
+        }
+      );
+    }
+
+    // Strip the trace from the client response — the frontend doesn't render
+    // it, and shipping it twice (once via socket, once via REST) is wasteful.
+    const { trace: _drop, ...payload } = resp.data || {};
+    return payload;
   } catch (err) {
+    if (itemId) {
+      // ML may attach its trace to the error detail; replay it before logging
+      // the failure so the sidebar shows the exact internal cause.
+      const errTrace = err.response?.data?.detail?.trace || err.response?.data?.trace;
+      if (Array.isArray(errTrace) && errTrace.length > 0) {
+        await ItemLogger.ingestTrace(itemId, errTrace, { source: 'ml' });
+      }
+      await ItemLogger.log(
+        itemId,
+        'PHOTO_VALIDATION_UNAVAILABLE',
+        `🔌 Photo validation skipped — ML service unreachable (${err.code || err.message}). Accepting the photo.`,
+        {
+          phase: 'evidence',
+          level: 'warn',
+          durationMs: Date.now() - startedAt,
+          errorCode: err.code,
+          errorMessage: err.message,
+          httpStatus: err.response?.status,
+        }
+      );
+    }
     // Don't block the user on a validation outage — treat as "couldn't check".
     return {
       photo_url: photoUrl,
@@ -701,6 +860,472 @@ const validatePhoto = async ({ photoUrl, itemId, expectedSubject }) => {
       validation_unavailable: true,
       reason: err.code || err.message,
     };
+  }
+};
+
+/**
+ * Load catalog context for a product: listing_data + reference images. When the
+ * product's images are angle-tagged, return the reference image(s) matching the
+ * requested angle so the per-upload phash is a same-angle duplicate check; else
+ * return all catalog images. (Seller angle-tagging is additive — falls back cleanly.)
+ */
+const _loadCatalogContext = async (productId, angle) => {
+  const ctx = { listingData: {}, catalogImageUrls: [], sellerPrompt: undefined };
+  if (!productId || !mongoose.Types.ObjectId.isValid(productId)) return ctx;
+  try {
+    const Product = require('../products/product.model');
+    const product = await Product.findById(productId)
+      .select('title description category brandName condition price images imageAngles gradingInstructions')
+      .lean();
+    if (!product) return ctx;
+    ctx.listingData = {
+      title: product.title,
+      description: product.description,
+      category: product.category,
+      brandName: product.brandName,
+      condition: product.condition,
+      price: product.price,
+    };
+    if (product.gradingInstructions && product.gradingInstructions.trim()) {
+      ctx.sellerPrompt = product.gradingInstructions.trim();
+    }
+    const allImages = Array.isArray(product.images) ? product.images : [];
+    // imageAngles (optional): { front: url, side_left: url, ... } set by the seller.
+    const angles = product.imageAngles && typeof product.imageAngles === 'object'
+      ? product.imageAngles : null;
+    if (angle && angles && angles[angle]) {
+      ctx.catalogImageUrls = [angles[angle]];
+    } else {
+      ctx.catalogImageUrls = allImages.slice(0, 4);
+    }
+  } catch (err) {
+    console.warn(`[grading] could not load product ${productId} for inspection: ${err.message}`);
+  }
+  return ctx;
+};
+
+/** Stable key for a photo independent of presigned-URL query params. */
+const _imageHash = (url) => {
+  try {
+    return String(url).split('?', 1)[0];
+  } catch (_e) {
+    return String(url);
+  }
+};
+
+/** Map a fieldId like "front_photo"/"side_left_photo" to a catalog angle, if any. */
+const _angleFromFieldId = (fieldId) => {
+  if (!fieldId) return null;
+  const id = String(fieldId).toLowerCase();
+  if (id.includes('front')) return 'front';
+  if (id.includes('side_left') || id.includes('left')) return 'side_left';
+  if (id.includes('side_right') || id.includes('right')) return 'side_right';
+  if (id.includes('rear') || id.includes('back')) return 'rear';
+  return null;
+};
+
+/**
+ * Persist (upsert) one Evidence_Fragment onto the Item, keyed by (fieldId, imageHash)
+ * so re-uploading the same field/photo supersedes the prior fragment (v2.34).
+ * Never throws.
+ */
+const _persistFragment = async (itemId, fragment) => {
+  if (!mongoose.isValidObjectId(itemId)) return;
+  try {
+    // Remove any prior fragment for the same (fieldId, imageHash), then push.
+    await Item.updateOne(
+      { _id: itemId },
+      { $pull: { evidenceFragments: { fieldId: fragment.fieldId, imageHash: fragment.imageHash } } }
+    );
+    await Item.updateOne(
+      { _id: itemId },
+      { $push: { evidenceFragments: fragment } }
+    );
+  } catch (err) {
+    console.warn(`[grading] could not persist fragment for ${itemId}: ${err.message}`);
+  }
+};
+
+/**
+ * Persist ONE field-level Evidence_Fragment onto the Item (v2.35), atomically
+ * replacing any prior fragments for the same fieldId (whether v2.34 per-photo
+ * or v2.35 field-level). The synthesizer therefore never double-counts.
+ * Never throws.
+ */
+const _persistFieldFragment = async (itemId, fragment) => {
+  if (!mongoose.isValidObjectId(itemId)) return;
+  try {
+    await Item.updateOne(
+      { _id: itemId },
+      { $pull: { evidenceFragments: { fieldId: fragment.fieldId } } }
+    );
+    await Item.updateOne(
+      { _id: itemId },
+      { $push: { evidenceFragments: fragment } }
+    );
+  } catch (err) {
+    console.warn(`[grading] could not persist field fragment for ${itemId}: ${err.message}`);
+  }
+};
+
+/**
+ * Per-field batched Evidence Inspection (Pass 1.5, v2.35).
+ *
+ * The user clicks "Submit Field" → the frontend sends every photo URL for that
+ * field. We proxy to ML /vision/inspect-field, which runs ONE multimodal LLM call
+ * over the whole set and returns a single field-level decision plus per-photo
+ * notes. On accept, we upsert ONE field-level Evidence_Fragment (and remove any
+ * prior fragments under this fieldId). On reject, no fragment is stored — the
+ * frontend keeps the photos so the user can edit and re-submit.
+ *
+ * Resilience: an ML/LLM outage is treated as accept-with-warning so the user is
+ * never hard-blocked; the synthesizer at submit can still flag the item.
+ */
+const verifyField = async ({ itemId, fieldId, fieldLabel, expectedSubject,
+                              validationCriteria, photoUrls, reason, category, productId }) => {
+  const startedAt = Date.now();
+  photoUrls = Array.isArray(photoUrls) ? photoUrls.filter(Boolean) : [];
+
+  if (photoUrls.length === 0) {
+    return {
+      accepted: false,
+      reupload_reason: 'Please add at least one photo before submitting this field.',
+      per_photo: [],
+      missing_views: [],
+      observations: [],
+      condition_signals: [],
+      inspector_status: 'no_photos',
+    };
+  }
+
+  // Backfill product/category/reason from the Item when the caller didn't supply
+  // them (the inspector needs catalog context for identity_match).
+  if (itemId && mongoose.isValidObjectId(itemId) && (!productId || !category || !reason)) {
+    try {
+      const item = await Item.findById(itemId)
+        .select('originalProductId category reasonText description')
+        .lean();
+      if (item) {
+        productId = productId || (item.originalProductId ? String(item.originalProductId) : undefined);
+        category = category || item.category;
+        reason = reason || item.reasonText || item.description;
+      }
+    } catch (err) {
+      console.warn(`[grading] verifyField could not load item ${itemId}: ${err.message}`);
+    }
+  }
+
+  if (itemId) {
+    await ItemLogger.log(itemId, 'FIELD_INSPECT_START',
+      `🔎 Submitting field "${fieldId || 'unknown'}" for AI verification — ${photoUrls.length} photo(s)`,
+      { phase: 'inspect', fieldId, expectedSubject, photoCount: photoUrls.length });
+  }
+
+  const angle = _angleFromFieldId(fieldId);
+  const { listingData, catalogImageUrls, sellerPrompt } = await _loadCatalogContext(productId, angle);
+  const prompts = await _resolvePrompts(category, sellerPrompt);
+
+  try {
+    const resp = await axios.post(`${ML_SERVICE_URL}/vision/inspect-field`, {
+      photo_urls: photoUrls,
+      item_id: itemId,
+      field_id: fieldId,
+      field_label: fieldLabel,
+      expected_subject: expectedSubject || undefined,
+      validation_criteria: validationCriteria || undefined,
+      reason,
+      category,
+      listing_data: listingData,
+      catalog_image_urls: catalogImageUrls,
+      base_prompt: prompts.base_prompt,
+      category_prompt: prompts.category_prompt,
+      seller_prompt: prompts.seller_prompt,
+    }, { timeout: 60000 });
+
+    const data = resp.data || {};
+
+    if (itemId && Array.isArray(data.trace) && data.trace.length > 0) {
+      await ItemLogger.ingestTrace(itemId, data.trace, { source: 'ml' });
+    }
+
+    if (itemId) {
+      const missing = (data.missing_views || []).join(', ');
+      await ItemLogger.log(itemId, 'FIELD_INSPECT_RESULT',
+        data.accepted
+          ? `✅ Field "${fieldId}" accepted (${photoUrls.length} photo(s))`
+          : `⚠️ Field "${fieldId}" needs re-upload: ${data.reupload_reason || 'unusable'}`
+            + (missing ? ` (missing: ${missing})` : ''),
+        { phase: 'inspect', level: data.accepted ? 'success' : 'warn',
+          durationMs: Date.now() - startedAt, accepted: data.accepted,
+          missingViews: data.missing_views || [],
+          inspectorStatus: data.inspector_status });
+    }
+
+    // Persist a field-level fragment ONLY for accepted fields. On reject we keep
+    // the photos in the UI and let the user edit; the prior verification (if any)
+    // for this fieldId is dropped so the synthesizer doesn't see a stale accept.
+    if (itemId) {
+      if (data.accepted) {
+        await _persistFieldFragment(itemId, {
+          fieldId: fieldId || null,
+          fieldLabel: fieldLabel || null,
+          imageUrls: photoUrls,
+          perPhoto: data.per_photo || [],
+          missingViews: data.missing_views || [],
+          ocrTextPerPhoto: data.ocr_text_per_photo || {},
+          preflightPerPhoto: data.preflight_per_photo || {},
+          accepted: true,
+          reuploadReason: null,
+          observations: data.observations || [],
+          conditionSignals: data.condition_signals || [],
+          inspectorModel: data.inspector_model || null,
+          inspectorStatus: data.inspector_status || 'ok',
+          createdAt: new Date(),
+        });
+      } else {
+        // Drop any prior fragment for this fieldId so a subsequent submit-time
+        // synthesis doesn't act on a stale accept.
+        try {
+          await Item.updateOne(
+            { _id: itemId },
+            { $pull: { evidenceFragments: { fieldId: fieldId || null } } }
+          );
+        } catch (err) {
+          console.warn(`[grading] verifyField cleanup failed: ${err.message}`);
+        }
+      }
+    }
+
+    const { trace: _drop, ...payload } = data;
+    return payload;
+  } catch (err) {
+    if (itemId) {
+      const errTrace = err.response?.data?.detail?.trace || err.response?.data?.trace;
+      if (Array.isArray(errTrace) && errTrace.length > 0) {
+        await ItemLogger.ingestTrace(itemId, errTrace, { source: 'ml' });
+      }
+      await ItemLogger.log(itemId, 'FIELD_INSPECT_UNAVAILABLE',
+        `🔌 Field verification skipped — ML service unreachable (${err.code || err.message}). Accepting the field.`,
+        { phase: 'inspect', level: 'warn', durationMs: Date.now() - startedAt,
+          errorCode: err.code, errorMessage: err.message, httpStatus: err.response?.status });
+
+      // Accept-with-warning so an LLM/ML outage never blocks a user. Persist a
+      // degraded fragment so the synthesizer knows this field wasn't inspected.
+      await _persistFieldFragment(itemId, {
+        fieldId: fieldId || null,
+        fieldLabel: fieldLabel || null,
+        imageUrls: photoUrls,
+        perPhoto: photoUrls.map((u) => ({ image_url: u, role: null, usable: null, note: null })),
+        missingViews: [],
+        accepted: true,
+        observations: [],
+        conditionSignals: [],
+        inspectorModel: null,
+        inspectorStatus: 'unavailable',
+        createdAt: new Date(),
+      });
+    }
+    return {
+      accepted: true,
+      reupload_reason: null,
+      per_photo: photoUrls.map((u) => ({ image_url: u, role: null, usable: null, note: null })),
+      missing_views: [],
+      observations: [],
+      condition_signals: [],
+      inspector_status: 'unavailable',
+      reason: err.code || err.message,
+    };
+  }
+};
+
+/**
+ * Evidence Inspector (Pass 1.5, v2.34) — inspect ONE uploaded photo against its form
+ * field + the catalog product. Replaces validatePhoto's OpenCV/CLIP checks. On an
+ * accepted photo, persists an Evidence_Fragment on the Item; on reject, returns the
+ * re-upload reason and stores nothing usable. Never throws.
+ *
+ * v2.35 NOTE: this single-photo path is preserved as a back-compat shim. The
+ * default flow now uses ``verifyField`` which judges a field's whole photo set
+ * in one call.
+ *
+ * @param {object} opts { photoUrl, itemId, fieldId, fieldLabel, expectedSubject,
+ *                        reason, category, productId }
+ */
+const inspectPhoto = async ({ photoUrl, itemId, fieldId, fieldLabel, expectedSubject,
+                              validationCriteria, reason, category, productId }) => {
+  const startedAt = Date.now();
+
+  // Backfill product/category/reason from the Item when the caller didn't supply
+  // them, so the inspector always has catalog context (identity check) without the
+  // frontend needing to thread it.
+  if (itemId && mongoose.isValidObjectId(itemId) && (!productId || !category || !reason)) {
+    try {
+      const item = await Item.findById(itemId)
+        .select('originalProductId category reasonText description')
+        .lean();
+      if (item) {
+        productId = productId || (item.originalProductId ? String(item.originalProductId) : undefined);
+        category = category || item.category;
+        reason = reason || item.reasonText || item.description;
+      }
+    } catch (err) {
+      console.warn(`[grading] inspectPhoto could not load item ${itemId}: ${err.message}`);
+    }
+  }
+
+  if (itemId) {
+    await ItemLogger.log(itemId, 'PHOTO_INSPECT_START',
+      `🔎 Inspecting photo for field "${fieldId || 'unknown'}"${expectedSubject ? ` (expected: ${expectedSubject})` : ''}…`,
+      { phase: 'inspect', photoUrl, fieldId, expectedSubject });
+  }
+
+  const angle = _angleFromFieldId(fieldId);
+  const { listingData, catalogImageUrls, sellerPrompt } = await _loadCatalogContext(productId, angle);
+  const prompts = await _resolvePrompts(category, sellerPrompt);
+
+  try {
+    const resp = await axios.post(`${ML_SERVICE_URL}/vision/inspect-photo`, {
+      photo_url: photoUrl,
+      item_id: itemId,
+      field_id: fieldId,
+      field_label: fieldLabel,
+      expected_subject: expectedSubject || undefined,
+      validation_criteria: validationCriteria || undefined,
+      reason,
+      category,
+      listing_data: listingData,
+      catalog_image_urls: catalogImageUrls,
+      base_prompt: prompts.base_prompt,
+      category_prompt: prompts.category_prompt,
+      seller_prompt: prompts.seller_prompt,
+    }, { timeout: 45000 });
+
+    const data = resp.data || {};
+
+    if (itemId && Array.isArray(data.trace) && data.trace.length > 0) {
+      await ItemLogger.ingestTrace(itemId, data.trace, { source: 'ml' });
+    }
+
+    if (itemId) {
+      await ItemLogger.log(itemId, 'PHOTO_INSPECT_RESULT',
+        data.accepted
+          ? `✅ Photo accepted (clarity=${data.clarity}, identity=${data.identity_match})`
+          : `⚠️ Re-upload requested: ${data.reupload_reason || 'unusable photo'}`,
+        { phase: 'inspect', level: data.accepted ? 'success' : 'warn',
+          durationMs: Date.now() - startedAt, accepted: data.accepted,
+          clarity: data.clarity, identityMatch: data.identity_match,
+          inspectorStatus: data.inspector_status });
+    }
+
+    // Persist a fragment only for accepted photos (the synthesizer reads these).
+    if (data.accepted && itemId) {
+      await _persistFragment(itemId, {
+        fieldId: fieldId || null,
+        fieldLabel: fieldLabel || null,
+        imageUrl: photoUrl,
+        imageHash: _imageHash(photoUrl),
+        accepted: true,
+        reuploadReason: null,
+        clarity: data.clarity || null,
+        subjectMatch: typeof data.subject_match === 'boolean' ? data.subject_match : null,
+        identityMatch: data.identity_match || null,
+        observations: data.observations || [],
+        ocrText: data.ocr_text || null,
+        conditionSignals: data.condition_signals || [],
+        preflight: data.preflight || {},
+        inspectorModel: data.inspector_model || null,
+        inspectorStatus: data.inspector_status || null,
+        createdAt: new Date(),
+      });
+    }
+
+    const { trace: _drop, ...payload } = data;
+    return payload;
+  } catch (err) {
+    if (itemId) {
+      const errTrace = err.response?.data?.detail?.trace || err.response?.data?.trace;
+      if (Array.isArray(errTrace) && errTrace.length > 0) {
+        await ItemLogger.ingestTrace(itemId, errTrace, { source: 'ml' });
+      }
+      await ItemLogger.log(itemId, 'PHOTO_INSPECT_UNAVAILABLE',
+        `🔌 Inspection skipped — ML service unreachable (${err.code || err.message}). Accepting the photo.`,
+        { phase: 'inspect', level: 'warn', durationMs: Date.now() - startedAt,
+          errorCode: err.code, errorMessage: err.message, httpStatus: err.response?.status });
+
+      // Accept-with-warning so an LLM/ML outage never blocks intake; store a fragment
+      // marked unavailable so the synthesizer knows this photo wasn't inspected.
+      await _persistFragment(itemId, {
+        fieldId: fieldId || null,
+        fieldLabel: fieldLabel || null,
+        imageUrl: photoUrl,
+        imageHash: _imageHash(photoUrl),
+        accepted: true,
+        clarity: null,
+        subjectMatch: null,
+        identityMatch: 'unknown',
+        observations: [],
+        ocrText: null,
+        conditionSignals: [],
+        preflight: {},
+        inspectorModel: null,
+        inspectorStatus: 'unavailable',
+        createdAt: new Date(),
+      });
+    }
+    return {
+      photo_url: photoUrl,
+      accepted: true,
+      inspector_status: 'unavailable',
+      reason: err.code || err.message,
+    };
+  }
+};
+
+/**
+ * Claim plausibility pre-check (v2.34). One cheap text-only LLM call to reject claims
+ * that clearly can't pertain to this product (e.g. "fridge not cooling" on a phone)
+ * BEFORE any Pass-1 / inspection / Pass-2 token spend. Fail-open: any error or an
+ * unreachable ML service returns plausible=true so real users are never blocked.
+ *
+ * @returns {Promise<{plausible: boolean, reason: string|null, checked: boolean}>}
+ */
+const validateClaim = async ({ reason, category, productTitle, productId }) => {
+  const text = (reason || '').trim();
+  if (text.length < 6) return { plausible: true, reason: null, checked: false };
+
+  let listingData = {};
+  let title = productTitle;
+  if (productId && mongoose.Types.ObjectId.isValid(productId)) {
+    try {
+      const Product = require('../products/product.model');
+      const product = await Product.findById(productId)
+        .select('title description category brandName').lean();
+      if (product) {
+        title = title || product.title;
+        listingData = {
+          title: product.title, description: product.description,
+          category: product.category, brandName: product.brandName,
+        };
+      }
+    } catch (_e) { /* ignore — pass what we have */ }
+  }
+
+  try {
+    const resp = await axios.post(`${ML_SERVICE_URL}/grade/validate-claim`, {
+      reason: text,
+      category,
+      product_title: title,
+      listing_data: listingData,
+    }, { timeout: 15000 });
+    const d = resp.data || {};
+    return {
+      plausible: d.plausible !== false,
+      reason: d.reason || null,
+      checked: d.checked !== false,
+    };
+  } catch (err) {
+    console.warn(`[grading] claim validation unavailable (${err.code || err.message}) — allowing claim`);
+    return { plausible: true, reason: null, checked: false };
   }
 };
 
@@ -725,4 +1350,7 @@ module.exports = {
   startFormGeneration,
   getForm,
   validatePhoto,
+  inspectPhoto,
+  verifyField,
+  validateClaim,
 };

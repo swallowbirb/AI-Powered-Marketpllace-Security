@@ -170,14 +170,25 @@ const attachEvidence = async (itemId, photos, actor, opts = {}) => {
 
   const fieldImages = opts.fieldImages && typeof opts.fieldImages === 'object'
     ? opts.fieldImages : null;
+  const additionalNotes = opts.additionalNotes && opts.additionalNotes.trim()
+    ? opts.additionalNotes.trim() : null;
 
   // --- Required-field gating (improvement #7) ---
   // If the item has a persisted AI/generic form, ensure every required photo field
   // has at least one image before we burn a grading pass.
   const formSchema = item.evidenceForm && item.evidenceForm.schema;
   if (fieldImages && formSchema && Array.isArray(formSchema.fields)) {
+    // Temporarily hidden fields (serial/model-label) are not required for now —
+    // mirrors the frontend filter so the gate doesn't block on a field the user never sees.
+    const isHiddenField = (f) => {
+      const s = `${f.id || ''} ${f.label || ''} ${f.expected_subject || ''}`.toLowerCase();
+      return /serial|imei/.test(s)
+        || /(brand|model)[^a-z]{0,12}label/.test(s)
+        || /label[^a-z]{0,12}(serial|brand|model)/.test(s)
+        || f.id === 'label_photo';
+    };
     const missing = formSchema.fields
-      .filter((f) => f && f.required && f.type === 'photo')
+      .filter((f) => f && f.required && f.type === 'photo' && !isHiddenField(f))
       .filter((f) => !(Array.isArray(fieldImages[f.id]) && fieldImages[f.id].length > 0))
       .map((f) => f.label || f.id);
     if (missing.length > 0) {
@@ -199,6 +210,15 @@ const attachEvidence = async (itemId, photos, actor, opts = {}) => {
   // Persist the field→image mapping so Pass 2 can reference photos by field name.
   if (fieldImages) {
     item.evidenceFieldImages = fieldImages;
+  }
+
+  // Append additional notes (buyer's free-text) to the item's description so the
+  // grading pipeline can reason over the user's own words alongside the photos.
+  if (additionalNotes) {
+    const existing = item.description ? item.description.trim() : '';
+    item.description = existing
+      ? `${existing}\n\nAdditional notes (at submission): ${additionalNotes}`
+      : additionalNotes;
   }
 
   await ItemLogger.log(itemId, 'EVIDENCE_SUBMIT', `📤 Evidence submitted: ${photos.length} photo(s)` +
@@ -240,7 +260,10 @@ const attachEvidence = async (itemId, photos, actor, opts = {}) => {
         evidencePhotos: allPhotos,
         fieldImages: item.evidenceFieldImages || {},
         category: item.category,
-        reason: item.reasonText || item.description || undefined,
+        // Compose reason: original claim + any additional notes the buyer just submitted.
+        reason: [item.reasonText, additionalNotes, item.description]
+          .filter(Boolean)
+          .join('\n\n') || undefined,
         intakePath: item.intakePath === 'return' ? 'returns' : 'sell-used',
         originalProductId: item.originalProductId?.toString() || null,
       })

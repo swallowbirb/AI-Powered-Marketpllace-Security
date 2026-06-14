@@ -5,8 +5,8 @@ export const initiateReturn = async ({ orderId, reasonCode, reasonText, clarifyi
   return response.data;
 };
 
-export const submitReturnEvidence = async (itemId, photos, fieldImages) => {
-  const response = await api.post(`/returns/${itemId}/evidence`, { photos, fieldImages });
+export const submitReturnEvidence = async (itemId, photos, fieldImages, additionalNotes) => {
+  const response = await api.post(`/returns/${itemId}/evidence`, { photos, fieldImages, additionalNotes });
   return response.data;
 };
 

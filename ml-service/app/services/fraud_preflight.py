@@ -1,20 +1,27 @@
 """
-Pre-flight fraud checks — Task 2.3 (Requirement 2)
+Pre-flight fraud checks — v2.34 (trimmed)
 
-Three cheap signals run before any LLM call:
-  1. imagehash  — perceptual hash of each submitted photo vs catalog photo hashes.
-                  Hamming distance <= threshold (default 10) => HARD signal.
+Two cheap, deterministic signals a vision LLM is structurally blind to:
+  1. imagehash  — perceptual hash of the submitted photo vs the catalog photo(s).
+                  Hamming distance <= threshold => the user re-submitted OUR image
+                  (stock-photo theft). HARD signal. Scoped per-angle by the caller
+                  (compare the user's `front` against the seller's `front`).
   2. Pillow/EXIF — presence of camera metadata (make / model / timestamp).
-                   Absent => weak/SOFT signal.
-  3. Rekognition — web/label signal via moderation/label detection => SOFT signal.
+                   Absent => weak/SOFT signal (phones/messaging apps strip EXIF, so
+                   this never hard-blocks — it is informational only).
+
+REMOVED in v2.34:
+  * OpenCV / CLIP (moved into the Evidence Inspector LLM).
+  * The "Rekognition web match" signal — it actually called detect_moderation_labels
+    (NSFW detection) and mislabeled any hit as a web match. AWS Rekognition has no
+    web/reverse-image API, so the capability never existed. Deleted.
 
 Outcome classification:
-  * HARD  -> short-circuit the pipeline, skip both Gemini passes.
-  * SOFT  -> annotate the summary, continue.
+  * HARD  -> short-circuit (skip grading).
+  * SOFT  -> annotate, continue.
   * CLEAN -> no signal.
 
-Each individual check is defensive: a failed check is treated as "not detected",
-logged, and the pipeline continues (Req 2.6).
+Every check is defensive: a failure is treated as "not detected" and logged.
 """
 import io
 import logging
@@ -45,19 +52,13 @@ def _phash_of_bytes(image_bytes: bytes):
         return None
 
 
-async def _compute_catalog_hashes(listing_image_urls: Optional[List[str]], trace=None) -> List[str]:
+async def compute_catalog_hashes(listing_image_urls: Optional[List[str]], trace=None) -> List[str]:
     """
-    Perceptual-hash (hex strings) the listing/catalog reference photos.
+    Perceptual-hash (hex strings) the catalog reference photos. These are what the
+    submitted evidence photo is compared against. Hashing happens ML-side with the
+    same ``imagehash`` library used for comparison so the hex strings are bit-compatible.
 
-    These are what ``phash_match`` compares submitted evidence photos against. The
-    hashing happens here, ML-side, with the *same* ``imagehash`` library used for the
-    comparison, so the hex strings are bit-compatible — a backend/Node pre-compute
-    would produce hashes that could never match. The backend therefore never
-    populates ``catalog_hashes``; we derive them from the ``listing_image_urls``
-    already in the request.
-
-    Degrades gracefully (Req 3.5): a reference that can't be fetched or hashed is
-    skipped with a log line, never raising.
+    Degrades gracefully: a reference that can't be fetched/hashed is skipped.
     """
     urls = listing_image_urls or []
     if not urls:
@@ -115,31 +116,33 @@ def exif_has_camera_data(image_bytes: bytes) -> bool:
         return False
 
 
-async def _rekognition_web_match(image_bytes: bytes) -> bool:
+def preflight_bytes(image_bytes: bytes, catalog_hashes: Optional[List[str]] = None) -> dict:
     """
-    Weak web/stock-image signal. We use moderation + label detection; a label set
-    dominated by generic 'product photo' style cues is a soft hint. For the demo
-    we treat any moderation hit as a soft web-match signal.
+    Run the two file-level checks on already-fetched bytes (used by the Evidence
+    Inspector at upload time). Returns the per-photo preflight signals + classification.
     """
-    try:
-        from app.services.rekognition import rekognition_service
-        mod = await rekognition_service.detect_moderation_labels_bytes(image_bytes)
-        return len(mod) > 0
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Rekognition web-match check failed: %s", exc)
-        return False
+    catalog_hashes = list(catalog_hashes or [])
+    any_phash = phash_match(image_bytes, catalog_hashes)
+    any_exif = exif_has_camera_data(image_bytes)
+    classification, triggering = classify(any_phash, any_exif)
+    return {
+        "phash_match": any_phash,
+        "exif_has_camera_data": any_exif,
+        "classification": classification,
+        "triggering_signal": triggering,
+    }
 
 
-def classify(any_phash_match: bool, any_exif_camera: bool, any_web_match: bool):
+def classify(any_phash_match: bool, any_exif_camera: bool, *_ignored):
     """
     Pure classification of fraud signals (testable without AWS / image fetches).
-    Returns (classification, triggering_signal).
+    Returns (classification, triggering_signal). Extra positional args are ignored
+    for backward compatibility with the old 3-arg signature.
     """
     if any_phash_match:
         return CLASSIFICATION_HARD, "phash_match_catalog"
-    if (not any_exif_camera) or any_web_match:
-        triggering = "missing_exif" if not any_exif_camera else "rekognition_web_match"
-        return CLASSIFICATION_SOFT, triggering
+    if not any_exif_camera:
+        return CLASSIFICATION_SOFT, "missing_exif"
     return CLASSIFICATION_CLEAN, None
 
 
@@ -147,17 +150,11 @@ async def run_preflight(image_urls: List[str], catalog_hashes: Optional[List[str
                         listing_image_urls: Optional[List[str]] = None,
                         trace=None) -> dict:
     """
-    Run all three pre-flight checks across the submitted photos.
+    Run both pre-flight checks across the submitted photos (submit-time / legacy path).
+    The per-upload path uses ``preflight_bytes`` on already-fetched bytes instead.
 
     Returns:
-      {
-        phash_match: bool,
-        exif_has_camera_data: bool,
-        rekognition_web_match: bool,
-        classification: HARD | SOFT | CLEAN,
-        triggering_signal: str | None,
-        notes: [str],
-      }
+      { phash_match, exif_has_camera_data, classification, triggering_signal, notes[] }
     """
     catalog_hashes = list(catalog_hashes or [])
     listing_image_urls = listing_image_urls or []
@@ -165,18 +162,14 @@ async def run_preflight(image_urls: List[str], catalog_hashes: Optional[List[str
 
     from app.services.image_utils import try_fetch_image_bytes
 
-    # Derive catalog perceptual hashes from the listing reference photos. The
-    # backend can't pre-compute these (they must be bit-compatible with imagehash,
-    # which only exists here), so it always sends catalog_hashes=[]; we hash the
-    # references ourselves. Any pre-supplied catalog_hashes are still honored.
     if trace is not None:
         trace.info("fraud", "FRAUD_PREFLIGHT",
                    f"🛡️ Fraud preflight: checking {len(image_urls or [])} photo(s) "
-                   f"against {len(catalog_hashes) + len(listing_image_urls)} catalog hash(es) "
-                   "(perceptual-hash, EXIF camera data, Rekognition moderation)")
+                   f"against {len(catalog_hashes) + len(listing_image_urls)} catalog reference(s) "
+                   "(perceptual-hash duplicate check + EXIF camera data)")
 
     if listing_image_urls:
-        computed = await _compute_catalog_hashes(listing_image_urls, trace=trace)
+        computed = await compute_catalog_hashes(listing_image_urls, trace=trace)
         catalog_hashes = catalog_hashes + computed
         if len(computed) < len(listing_image_urls):
             notes.append(
@@ -184,7 +177,6 @@ async def run_preflight(image_urls: List[str], catalog_hashes: Optional[List[str
 
     any_phash_match = False
     any_exif_camera = False
-    any_web_match = False
     fetched = 0
 
     for idx, url in enumerate(image_urls or []):
@@ -194,21 +186,12 @@ async def run_preflight(image_urls: List[str], catalog_hashes: Optional[List[str
             notes.append(f"could not fetch {url} for fraud preflight")
             continue
         fetched += 1
-
-        # 1. perceptual hash vs catalog
         if phash_match(img_bytes, catalog_hashes):
             any_phash_match = True
-
-        # 2. EXIF camera metadata
         if exif_has_camera_data(img_bytes):
             any_exif_camera = True
 
-        # 3. Rekognition web/label signal
-        if await _rekognition_web_match(img_bytes):
-            any_web_match = True
-
-    # Classify. Hard signal short-circuits.
-    classification, triggering = classify(any_phash_match, any_exif_camera, any_web_match)
+    classification, triggering = classify(any_phash_match, any_exif_camera)
 
     if trace is not None:
         level = "error" if classification == CLASSIFICATION_HARD else (
@@ -222,13 +205,11 @@ async def run_preflight(image_urls: List[str], catalog_hashes: Optional[List[str
         trace.add("fraud", "FRAUD_RESULT", msg, level=level,
                   classification=classification, triggering_signal=triggering,
                   phash_match=any_phash_match, exif_has_camera_data=any_exif_camera,
-                  rekognition_web_match=any_web_match, photos_fetched=fetched,
-                  notes=notes or None)
+                  photos_fetched=fetched, notes=notes or None)
 
     return {
         "phash_match": any_phash_match,
         "exif_has_camera_data": any_exif_camera,
-        "rekognition_web_match": any_web_match,
         "classification": classification,
         "triggering_signal": triggering,
         "notes": notes,

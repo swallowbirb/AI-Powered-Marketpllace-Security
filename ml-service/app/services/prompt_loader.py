@@ -61,22 +61,26 @@ def load_template(name: str) -> str:
         raise PromptError(f"Template {name} unavailable: {exc}") from exc
 
 
-def compose(category: Optional[str], body: str, seller_prompt: Optional[str] = None) -> str:
+def compose(category: Optional[str], body: str, seller_prompt: Optional[str] = None,
+            base_override: Optional[str] = None, category_override: Optional[str] = None) -> str:
     """
     Compose base prompt + optional category overlay + optional seller-custom
     overlay + the task-specific body.
 
-    Layering order (v3.44, improvement #10 — reserves the seller-custom slot from
-    the Phase 2 TODO "Base Prompt, Category Prompt, Custom Prompt"):
+    Layering order (v3.44/v2.34 — "Base Prompt, Category Prompt, Custom Prompt"):
         base  →  category overlay  →  seller-custom overlay  →  task body
 
+    v2.34: ``base_override`` / ``category_override`` let the backend inject the
+    admin-edited, DB-stored prompts (resolved in grading.service). When provided,
+    they REPLACE the bundled file content; when absent, the shipped files are used
+    so the ML service still works standalone.
+
     The seller overlay is positioned AFTER the category overlay so a seller can
-    refine — but not silently override — the platform's category rules. It is an
-    opt-in string supplied by the caller (not built in v3.44; the slot exists so
-    wiring it later is a one-line change at the call site).
+    refine — but not silently override — the platform's category rules.
     """
-    base = load_base_prompt()
-    overlay = load_category_prompt(category)
+    base = base_override if (base_override and base_override.strip()) else load_base_prompt()
+    overlay = category_override if (category_override and category_override.strip()) \
+        else load_category_prompt(category)
     parts = [base]
     if overlay:
         parts.append(overlay)

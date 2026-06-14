@@ -43,6 +43,28 @@ const productSchema = new mongoose.Schema(
       enum: ['New', 'Used'],
       default: 'New',
     },
+    // v2.34 — seller-authored AI grading instructions for THIS product. Composed into
+    // the grading prompts as the seller-custom overlay (base -> category -> seller).
+    // Advisory: refines, never overrides, the platform rubric.
+    gradingInstructions: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    // v2.34 — seller-tagged catalog reference images by angle, used for the per-upload
+    // same-angle perceptual-hash duplicate check. { front, side_left, side_right, rear }.
+    imageAngles: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+    // v2.34 — per-image custom hints. Each entry instructs Pass-1 to generate a dedicated
+    // form field for that specific catalog image when a buyer returns/resells the product.
+    // Shape: [{ url, label, hint }] — label is the tag heading, hint is the AI-facing
+    // description used to verify the buyer's photo on a return/refund.
+    imageHints: {
+      type: [{ url: { type: String }, label: { type: String }, hint: { type: String } }],
+      default: [],
+    },
     // Denormalized review stats
     averageRating: {
       type: Number,

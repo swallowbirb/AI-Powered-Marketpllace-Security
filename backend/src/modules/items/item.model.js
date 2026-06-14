@@ -75,6 +75,49 @@ const itemSchema = new mongoose.Schema(
     // { fieldId: [s3Url, ...] }. Carried through to Pass 2 for explainable grades.
     evidenceFieldImages: { type: mongoose.Schema.Types.Mixed, default: {} },
 
+    // v2.34/v2.35 — Evidence Inspector results, written when the user submits a
+    // field for AI verification. Two cardinalities coexist transparently:
+    //   • v2.34 (per-photo): one fragment per (fieldId, imageHash) — the legacy
+    //     per-upload path that's still served by /api/grading/inspect-photo.
+    //   • v2.35 (per-field): one fragment per fieldId carrying `imageUrls` (the
+    //     whole photo set), `perPhoto` (descriptive notes per image), and
+    //     `missingViews` (views still required) — produced by the user's
+    //     "Submit Field" click via /api/grading/verify-field. When v2.35
+    //     verification runs, ALL prior fragments under the same fieldId
+    //     (whether v2.34 or v2.35) are removed and replaced by the new one
+    //     so the synthesizer never double-counts.
+    evidenceFragments: {
+      type: [
+        {
+          fieldId: { type: String, default: null },
+          fieldLabel: { type: String, default: null },
+          // v2.34 single-photo shape
+          imageUrl: { type: String, default: null },
+          imageHash: { type: String, default: null, index: true },
+          // v2.35 multi-photo shape
+          imageUrls: { type: [String], default: undefined },
+          perPhoto: { type: mongoose.Schema.Types.Mixed, default: undefined },
+          missingViews: { type: [String], default: undefined },
+          ocrTextPerPhoto: { type: mongoose.Schema.Types.Mixed, default: undefined },
+          preflightPerPhoto: { type: mongoose.Schema.Types.Mixed, default: undefined },
+          // Common evidence fields
+          accepted: { type: Boolean, default: true },
+          reuploadReason: { type: String, default: null },
+          clarity: { type: String, default: null },
+          subjectMatch: { type: Boolean, default: null },
+          identityMatch: { type: String, default: null }, // yes | no | unknown
+          observations: { type: [String], default: [] },
+          ocrText: { type: String, default: null },
+          conditionSignals: { type: [String], default: [] },
+          preflight: { type: mongoose.Schema.Types.Mixed, default: {} },
+          inspectorModel: { type: String, default: null },
+          inspectorStatus: { type: String, default: null },
+          createdAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+    },
+
     // State machine
     status: {
       type: String,

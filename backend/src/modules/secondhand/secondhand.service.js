@@ -83,7 +83,7 @@ const initiateFromOrder = async (userId, { orderId, description, askingPrice, cl
  * Attach evidence photos and trigger grading.
  * v3.44 — accepts an optional field→image mapping from the dynamic form.
  */
-const submitEvidence = async (userId, itemId, photos, fieldImages) => {
+const submitEvidence = async (userId, itemId, photos, fieldImages, additionalNotes) => {
   const item = await require('../items/item.model').findById(itemId).lean();
   if (!item) throw new Error('Item not found');
   if (item.initiatorUserId.toString() !== userId.toString()) throw new Error('Forbidden');
@@ -94,7 +94,7 @@ const submitEvidence = async (userId, itemId, photos, fieldImages) => {
     return item;
   }
 
-  return itemService.attachEvidence(itemId, photos, { userId, role: 'buyer' }, { fieldImages });
+  return itemService.attachEvidence(itemId, photos, { userId, role: 'buyer' }, { fieldImages, additionalNotes });
 };
 
 /**
