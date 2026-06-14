@@ -370,12 +370,9 @@ const getItemStatus = async (itemId) => {
     category: item.category || null,
     reasonCode: item.reasonCode || null,
     reasonText: item.reasonText || null,
-<<<<<<< Updated upstream
     evidenceForm: item.evidenceForm || null,
     clarifyingPhotos: item.clarifyingPhotos || [],
-=======
     ownerNotes: item.ownerNotes || '',
->>>>>>> Stashed changes
     grade: grade || null,
     routingDecision: null, // populated in P4
     createdAt: item.createdAt,
