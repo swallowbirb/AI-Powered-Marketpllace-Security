@@ -15,28 +15,56 @@ import ReturnInsightsPanel from '../components/prevention/ReturnInsightsPanel';
 const StatusBadge = ({ status }) => {
   switch (status) {
     case 'published':
-      return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"><CheckCircle className="w-3 h-3" /> Published</span>;
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <CheckCircle className="w-3 h-3" /> Published
+        </span>
+      );
     case 'approved':
-      return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20"><CheckCircle className="w-3 h-3" /> Approved</span>;
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+          <CheckCircle className="w-3 h-3" /> Approved
+        </span>
+      );
     case 'pending_review':
-      return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-500 border border-amber-500/20"><Clock className="w-3 h-3" /> Pending Review</span>;
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+          <Clock className="w-3 h-3" /> Pending Review
+        </span>
+      );
     case 'pending':
-      return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-500/10 text-yellow-400 border border-yellow-500/20"><Clock className="w-3 h-3" /> Pending</span>;
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+          <Clock className="w-3 h-3" /> Pending
+        </span>
+      );
     case 'flagged':
-      return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-500/10 text-rose-500 border border-rose-500/20"><AlertTriangle className="w-3 h-3" /> Flagged</span>;
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200">
+          <AlertTriangle className="w-3 h-3" /> Flagged
+        </span>
+      );
     case 'rejected':
-      return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-500/10 text-red-500 border border-red-500/20"><AlertTriangle className="w-3 h-3" /> Rejected</span>;
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-200">
+          <AlertTriangle className="w-3 h-3" /> Rejected
+        </span>
+      );
     default:
-      return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-500/10 text-gray-400 border border-gray-500/20">Unknown</span>;
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200">
+          Unknown
+        </span>
+      );
   }
 };
 
 const EnrollmentBadge = ({ status }) => {
-  if (!status) return <span className="text-xs text-zinc-500">Not Applied</span>;
+  if (!status) return <span className="text-xs text-gray-500">Not Applied</span>;
   const styles = {
-    pending: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-    approved: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-    rejected: 'bg-red-500/10 text-red-400 border-red-500/20',
+    pending: 'bg-amber-50 text-amber-700 border-amber-200',
+    approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    rejected: 'bg-red-50 text-red-600 border-red-200',
   };
   const icons = {
     pending: <Clock className="w-3 h-3" />,
@@ -143,7 +171,11 @@ const SellerDashboard = () => {
     try {
       const res = await updateOffer(offer._id, { status: newStatus });
       if (res.success) {
-        setOffers((prev) => prev.map((o) => o._id === offer._id ? { ...o, status: newStatus, isBuyBoxWinner: res.data.isBuyBoxWinner } : o));
+        setOffers((prev) =>
+          prev.map((o) =>
+            o._id === offer._id ? { ...o, status: newStatus, isBuyBoxWinner: res.data.isBuyBoxWinner } : o
+          )
+        );
       }
     } catch (err) {
       console.error(err);
@@ -178,25 +210,28 @@ const SellerDashboard = () => {
   const buyBoxCount = offers.filter((o) => o.isBuyBoxWinner).length;
 
   return (
-    <div className="min-h-screen bg-black text-white p-8 font-sans">
-      <div className="max-w-6xl mx-auto space-y-8">
+    <div className="min-h-screen bg-[#EAEDED] p-6 md:p-8">
+      <div className="max-w-6xl mx-auto space-y-6">
 
         {/* New Listing Choice Modal */}
         <AnimatePresence>
           {showListingModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
               <motion.div
                 initial={{ opacity: 0, scale: 0.95, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="w-full max-w-lg bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl p-6"
+                className="w-full max-w-lg bg-white border border-gray-200 rounded-2xl shadow-xl p-6"
               >
                 <div className="flex items-center justify-between mb-6">
                   <div>
-                    <h2 className="text-xl font-bold">Create New Listing</h2>
-                    <p className="text-sm text-zinc-500 mt-0.5">Choose your listing type</p>
+                    <h2 className="text-xl font-bold text-gray-900">Create New Listing</h2>
+                    <p className="text-sm text-gray-500 mt-0.5">Choose your listing type</p>
                   </div>
-                  <button onClick={() => setShowListingModal(false)} className="text-zinc-500 hover:text-white transition-colors">
+                  <button
+                    onClick={() => setShowListingModal(false)}
+                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                  >
                     <X className="w-5 h-5" />
                   </button>
                 </div>
@@ -207,23 +242,25 @@ const SellerDashboard = () => {
                     whileHover={{ scale: 1.01 }}
                     whileTap={{ scale: 0.99 }}
                     onClick={() => { setShowListingModal(false); navigate('/seller/new-offer'); }}
-                    className="w-full text-left bg-[#FF9900]/5 border border-[#FF9900]/30 hover:border-[#FF9900]/60 rounded-2xl p-5 transition-all group"
+                    className="w-full text-left bg-amber-50 border border-amber-200 hover:border-[#FF9900] rounded-2xl p-5 transition-all group"
                   >
                     <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 rounded-xl bg-[#FF9900]/10 border border-[#FF9900]/20 flex items-center justify-center flex-shrink-0">
+                      <div className="w-12 h-12 rounded-xl bg-amber-100 border border-amber-200 flex items-center justify-center flex-shrink-0">
                         <Zap className="w-6 h-6 text-[#FF9900]" />
                       </div>
                       <div className="flex-1">
-                        <p className="font-bold text-white group-hover:text-[#FF9900] transition-colors flex items-center gap-2">
+                        <p className="font-bold text-gray-900 group-hover:text-[#C7511F] transition-colors flex items-center gap-2">
                           List on an Existing Brand Product
-                          <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-normal">Recommended</span>
+                          <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-normal">
+                            Recommended
+                          </span>
                         </p>
-                        <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
+                        <p className="text-xs text-gray-500 mt-1 leading-relaxed">
                           Compete for the Buy Box on a brand's official catalog entry.
                           Product title, images, and description are inherited from the brand — fully authorized.
                         </p>
                       </div>
-                      <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-[#FF9900] transition-colors flex-shrink-0 mt-1" />
+                      <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-[#FF9900] transition-colors flex-shrink-0 mt-1" />
                     </div>
                   </motion.button>
 
@@ -232,21 +269,23 @@ const SellerDashboard = () => {
                     whileHover={{ scale: 1.01 }}
                     whileTap={{ scale: 0.99 }}
                     onClick={() => { setShowListingModal(false); navigate('/seller/new-product'); }}
-                    className="w-full text-left bg-zinc-900 border border-zinc-800 hover:border-zinc-600 rounded-2xl p-5 transition-all group"
+                    className="w-full text-left bg-white border border-gray-200 hover:border-gray-400 rounded-2xl p-5 transition-all group"
                   >
                     <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 rounded-xl bg-zinc-800 flex items-center justify-center flex-shrink-0">
-                        <Package className="w-6 h-6 text-zinc-400" />
+                      <div className="w-12 h-12 rounded-xl bg-gray-100 border border-gray-200 flex items-center justify-center flex-shrink-0">
+                        <Package className="w-6 h-6 text-gray-500" />
                       </div>
                       <div className="flex-1">
-                        <p className="font-bold text-white group-hover:text-zinc-200 transition-colors">Create an Independent Listing</p>
-                        <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
+                        <p className="font-bold text-gray-900 group-hover:text-gray-700 transition-colors">
+                          Create an Independent Listing
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1 leading-relaxed">
                           List a product with your own title, images, and description.
                           If you claim a registered brand name, your listing will be automatically
                           cross-referenced against that brand's official catalog.
                         </p>
                       </div>
-                      <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-zinc-400 transition-colors flex-shrink-0 mt-1" />
+                      <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-gray-600 transition-colors flex-shrink-0 mt-1" />
                     </div>
                   </motion.button>
                 </div>
@@ -259,17 +298,17 @@ const SellerDashboard = () => {
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-zinc-900/50 p-6 rounded-2xl border border-zinc-800 backdrop-blur-sm"
+          className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white border border-gray-200 p-6 rounded-2xl shadow-sm"
         >
           <div>
-            <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-transparent">
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
               Seller Dashboard
             </h1>
-            <p className="text-zinc-400 mt-1">Manage your listings and brand authorizations.</p>
+            <p className="text-gray-500 mt-1 text-sm">Manage your listings and brand authorizations.</p>
           </div>
           <button
             onClick={() => setShowListingModal(true)}
-            className="flex items-center gap-2 bg-white text-black px-5 py-2.5 rounded-full font-medium hover:bg-zinc-200 transition-colors shadow-[0_0_20px_rgba(255,255,255,0.1)] hover:shadow-[0_0_25px_rgba(255,255,255,0.2)]"
+            className="flex items-center gap-2 bg-[#FF9900] hover:bg-[#FFB347] text-black px-5 py-2.5 rounded-full font-medium transition-colors shadow-sm"
           >
             <PlusCircle className="w-5 h-5" />
             New Listing
@@ -281,12 +320,14 @@ const SellerDashboard = () => {
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="flex items-start gap-3 p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-amber-400"
+            className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-700"
           >
             <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
             <div>
               <p className="font-semibold text-sm">Account Suspended</p>
-              <p className="text-xs text-amber-400/80 mt-0.5">Your seller account has been temporarily suspended. You cannot create new listings until this is resolved. Please contact support for more information.</p>
+              <p className="text-xs text-amber-600 mt-0.5">
+                Your seller account has been temporarily suspended. You cannot create new listings until this is resolved. Please contact support for more information.
+              </p>
             </div>
           </motion.div>
         )}
@@ -294,23 +335,23 @@ const SellerDashboard = () => {
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: 'Total Listings', value: products.length, icon: Package, color: 'text-blue-400' },
-            { label: 'Active Offers', value: offers.length > 0 ? activeOffersCount : '—', icon: ShoppingBag, color: 'text-[#FF9900]' },
-            { label: 'Buy Box Wins', value: buyBoxCount || '—', icon: Zap, color: 'text-emerald-400' },
-            { label: 'Flagged Issues', value: products.filter((p) => p.status === 'flagged').length, icon: AlertTriangle, color: 'text-rose-400' },
+            { label: 'Total Listings', value: products.length, icon: Package, color: 'text-blue-600', bg: 'bg-blue-50' },
+            { label: 'Active Offers', value: offers.length > 0 ? activeOffersCount : '—', icon: ShoppingBag, color: 'text-[#FF9900]', bg: 'bg-amber-50' },
+            { label: 'Buy Box Wins', value: buyBoxCount || '—', icon: Zap, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+            { label: 'Flagged Issues', value: products.filter((p) => p.status === 'flagged').length, icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-50' },
           ].map((stat, idx) => (
             <motion.div
               key={stat.label}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: idx * 0.1 }}
-              className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 flex items-center justify-between"
+              className="bg-white border border-gray-200 p-6 rounded-2xl shadow-sm flex items-center justify-between"
             >
               <div>
-                <p className="text-sm text-zinc-400 font-medium">{stat.label}</p>
-                <p className="text-3xl font-bold mt-1">{stat.value}</p>
+                <p className="text-sm text-gray-500 font-medium">{stat.label}</p>
+                <p className="text-3xl font-bold text-gray-900 mt-1">{stat.value}</p>
               </div>
-              <div className={`p-3 rounded-full bg-zinc-800/50 ${stat.color}`}>
+              <div className={`p-3 rounded-full ${stat.bg} ${stat.color}`}>
                 <stat.icon className="w-6 h-6" />
               </div>
             </motion.div>
@@ -318,21 +359,21 @@ const SellerDashboard = () => {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-xl p-1">
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
           {TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-medium transition-all ${
                 activeTab === tab.id
-                  ? 'bg-zinc-700 text-white'
-                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                  ? 'bg-white shadow-sm text-gray-900'
+                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
               }`}
             >
               <tab.icon className="w-4 h-4" />
               <span>{tab.label}</span>
               {tab.id === 'brands' && pendingBrandsCount > 0 && (
-                <span className="bg-amber-500 text-black text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
                   {pendingBrandsCount}
                 </span>
               )}
@@ -342,6 +383,8 @@ const SellerDashboard = () => {
 
         {/* Tab Content */}
         <AnimatePresence mode="wait">
+
+          {/* Listings Tab */}
           {activeTab === 'listings' && (
             <motion.div
               key="listings"
@@ -349,28 +392,28 @@ const SellerDashboard = () => {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden"
+              className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden"
             >
-              <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
-                <h2 className="text-xl font-semibold flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-zinc-400" />
+              <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+                <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-gray-400" />
                   Recent Listings
                 </h2>
               </div>
 
               <div className="overflow-x-auto">
                 {isLoadingProducts ? (
-                  <div className="p-8 text-center text-zinc-500">Loading products...</div>
+                  <div className="p-8 text-center text-gray-500">Loading products...</div>
                 ) : products.length === 0 ? (
                   <div className="p-12 text-center flex flex-col items-center">
-                    <div className="w-16 h-16 bg-zinc-800 rounded-full flex items-center justify-center mb-4">
-                      <Package className="w-8 h-8 text-zinc-500" />
+                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                      <Package className="w-8 h-8 text-gray-400" />
                     </div>
-                    <h3 className="text-lg font-medium text-white mb-1">No products yet</h3>
-                    <p className="text-zinc-400 mb-6">Start by creating your first listing.</p>
+                    <h3 className="text-lg font-medium text-gray-900 mb-1">No products yet</h3>
+                    <p className="text-gray-500 mb-6">Start by creating your first listing.</p>
                     <button
                       onClick={() => navigate('/seller/new-product')}
-                      className="text-sm bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-full transition-colors"
+                      className="text-sm bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-full transition-colors"
                     >
                       Create Listing
                     </button>
@@ -378,7 +421,7 @@ const SellerDashboard = () => {
                 ) : (
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="bg-zinc-900/50 text-sm text-zinc-400 border-b border-zinc-800">
+                      <tr className="bg-gray-50 text-sm text-gray-500 border-b border-gray-200">
                         <th className="p-4 font-medium">Product</th>
                         <th className="p-4 font-medium">Category</th>
                         <th className="p-4 font-medium">Price</th>
@@ -392,25 +435,25 @@ const SellerDashboard = () => {
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           key={product._id}
-                          className="border-b border-zinc-800/50 hover:bg-zinc-800/20 transition-colors"
+                          className="border-b border-gray-200 hover:bg-gray-50 transition-colors"
                         >
                           <td className="p-4">
-                            <p className="font-medium text-zinc-200">{product.title}</p>
+                            <p className="font-medium text-gray-900">{product.title}</p>
                             {product.brandName && (
-                              <p className="text-xs text-zinc-500 mt-0.5">Brand: {product.brandName}</p>
+                              <p className="text-xs text-gray-500 mt-0.5">Brand: {product.brandName}</p>
                             )}
                           </td>
-                          <td className="p-4 text-xs text-zinc-400">{product.category || '—'}</td>
-                          <td className="p-4 text-zinc-300 font-medium">${product.price.toFixed(2)}</td>
+                          <td className="p-4 text-xs text-gray-500">{product.category || '—'}</td>
+                          <td className="p-4 text-gray-900 font-medium">${product.price.toFixed(2)}</td>
                           <td className="p-4">
                             <StatusBadge status={product.status} />
                             {product.status === 'flagged' && (
-                              <p className="text-[10px] text-rose-500/70 mt-1.5 max-w-[150px] leading-tight font-medium">
+                              <p className="text-[10px] text-red-600 mt-1.5 max-w-[150px] leading-tight font-medium">
                                 Flagged for manual review.
                               </p>
                             )}
                             {product.status === 'suspended' && (
-                              <p className="text-[10px] text-red-500/70 mt-1.5 max-w-[150px] leading-tight font-medium">
+                              <p className="text-[10px] text-red-600 mt-1.5 max-w-[150px] leading-tight font-medium">
                                 Suspended due to policy violations.
                               </p>
                             )}
@@ -419,13 +462,13 @@ const SellerDashboard = () => {
                             <div className="flex justify-end items-center gap-3">
                               <button
                                 onClick={() => navigate(`/seller/edit-product/${product._id}`)}
-                                className="text-sm text-zinc-400 hover:text-white transition-colors"
+                                className="text-sm text-[#007185] hover:text-[#C7511F] transition-colors"
                               >
                                 Edit
                               </button>
                               <button
                                 onClick={() => handleDeleteProduct(product._id)}
-                                className="text-zinc-500 hover:text-red-400 transition-colors"
+                                className="text-gray-400 hover:text-red-600 transition-colors"
                                 title="Delete listing"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -440,6 +483,8 @@ const SellerDashboard = () => {
               </div>
             </motion.div>
           )}
+
+          {/* Offers Tab */}
           {activeTab === 'offers' && (
             <motion.div
               key="offers"
@@ -449,11 +494,11 @@ const SellerDashboard = () => {
               transition={{ duration: 0.2 }}
               className="space-y-4"
             >
-              <div className="bg-[#FF9900]/5 border border-[#FF9900]/20 rounded-2xl p-4 flex items-start gap-3">
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
                 <Zap className="w-5 h-5 text-[#FF9900] flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-semibold text-[#FF9900]">Catalog Offers</p>
-                  <p className="text-xs text-zinc-400 mt-0.5 leading-relaxed">
+                  <p className="text-sm font-semibold text-amber-700">Catalog Offers</p>
+                  <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
                     These are your offers on brand catalog entries. The Buy Box is awarded to the lowest-price active offer.
                     Toggle offers inactive without deleting them, or remove permanently.
                   </p>
@@ -461,30 +506,34 @@ const SellerDashboard = () => {
               </div>
 
               {isLoadingOffers ? (
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-12 flex items-center justify-center">
-                  <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+                <div className="bg-white border border-gray-200 rounded-2xl p-12 flex items-center justify-center shadow-sm">
+                  <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
                 </div>
               ) : offers.length === 0 ? (
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-12 text-center">
-                  <ShoppingBag className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
-                  <h3 className="text-lg font-bold mb-2">No Catalog Offers Yet</h3>
-                  <p className="text-zinc-400 text-sm mb-6">Create offers on brand catalog entries to compete for the Buy Box.</p>
+                <div className="bg-white border border-gray-200 rounded-2xl p-12 text-center shadow-sm">
+                  <ShoppingBag className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-bold text-gray-900 mb-2">No Catalog Offers Yet</h3>
+                  <p className="text-gray-500 text-sm mb-6">
+                    Create offers on brand catalog entries to compete for the Buy Box.
+                  </p>
                   <button
                     onClick={() => { setShowListingModal(true); }}
-                    className="inline-flex items-center gap-2 bg-[#FF9900] text-black text-sm font-bold px-5 py-2.5 rounded-xl hover:bg-[#FFB347] transition-colors"
+                    className="inline-flex items-center gap-2 bg-[#FF9900] hover:bg-[#FFB347] text-black text-sm font-bold px-5 py-2.5 rounded-xl transition-colors"
                   >
                     <Zap className="w-4 h-4" /> Create First Offer
                   </button>
                 </div>
               ) : (
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
-                  <div className="p-5 border-b border-zinc-800">
-                    <h2 className="font-bold text-lg">My Catalog Offers ({offers.length})</h2>
-                    <p className="text-xs text-zinc-500 mt-0.5">{activeOffersCount} active · {buyBoxCount} Buy Box win{buyBoxCount !== 1 ? 's' : ''}</p>
+                <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+                  <div className="p-5 border-b border-gray-200">
+                    <h2 className="font-bold text-lg text-gray-900">My Catalog Offers ({offers.length})</h2>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {activeOffersCount} active · {buyBoxCount} Buy Box win{buyBoxCount !== 1 ? 's' : ''}
+                    </p>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left">
-                      <thead className="bg-zinc-800/50 text-xs text-zinc-400 border-b border-zinc-800">
+                      <thead className="bg-gray-50 text-xs text-gray-500 border-b border-gray-200">
                         <tr>
                           <th className="px-4 py-3 font-medium">Product</th>
                           <th className="px-4 py-3 font-medium">Your Price</th>
@@ -499,37 +548,38 @@ const SellerDashboard = () => {
                             key={offer._id}
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
-                            className={`border-b border-zinc-800/50 transition-colors ${
-                              offer.isBuyBoxWinner ? 'bg-[#FF9900]/3' : 'hover:bg-zinc-800/20'
+                            className={`border-b border-gray-200 transition-colors ${
+                              offer.isBuyBoxWinner ? 'bg-amber-50' : 'hover:bg-gray-50'
                             }`}
                           >
                             <td className="px-4 py-3">
                               <Link
                                 to={`/p/${offer.catalogEntryId?._id}`}
-                                className="font-medium text-sm text-zinc-200 hover:text-[#FF9900] transition-colors flex items-center gap-1 group"
+                                className="font-medium text-sm text-[#007185] hover:text-[#C7511F] transition-colors flex items-center gap-1 group"
                               >
                                 {offer.catalogEntryId?.title || 'Unknown product'}
                                 <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                               </Link>
                             </td>
                             <td className="px-4 py-3">
-                              <span className="text-sm font-bold text-white">${offer.price.toFixed(2)}</span>
+                              <span className="text-sm font-bold text-gray-900">${offer.price.toFixed(2)}</span>
                             </td>
-
                             <td className="px-4 py-3">
                               {offer.isBuyBoxWinner ? (
-                                <span className="inline-flex items-center gap-1 text-xs bg-[#FF9900]/10 text-[#FF9900] border border-[#FF9900]/20 px-2 py-0.5 rounded-full font-bold">
+                                <span className="inline-flex items-center gap-1 text-xs bg-amber-50 text-[#FF9900] border border-amber-200 px-2 py-0.5 rounded-full font-bold">
                                   <Zap className="w-3 h-3" /> Winner
                                 </span>
                               ) : (
-                                <span className="text-xs text-zinc-600">—</span>
+                                <span className="text-xs text-gray-400">—</span>
                               )}
                             </td>
                             <td className="px-4 py-3">
-                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                                offer.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' :
-                                offer.status === 'flagged' ? 'bg-red-500/10 text-red-400' :
-                                'bg-zinc-700 text-zinc-400'
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${
+                                offer.status === 'active'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : offer.status === 'flagged'
+                                  ? 'bg-red-50 text-red-600 border-red-200'
+                                  : 'bg-gray-100 text-gray-500 border-gray-200'
                               }`}>
                                 {offer.status}
                               </span>
@@ -539,15 +589,15 @@ const SellerDashboard = () => {
                                 <button
                                   onClick={() => handleToggleOffer(offer)}
                                   title={offer.status === 'active' ? 'Deactivate' : 'Activate'}
-                                  className="text-zinc-500 hover:text-white transition-colors"
+                                  className="text-gray-400 hover:text-gray-700 transition-colors"
                                 >
                                   {offer.status === 'active'
-                                    ? <ToggleRight className="w-5 h-5 text-emerald-400" />
+                                    ? <ToggleRight className="w-5 h-5 text-emerald-600" />
                                     : <ToggleLeft className="w-5 h-5" />}
                                 </button>
                                 <button
                                   onClick={() => handleDeleteOffer(offer._id)}
-                                  className="text-zinc-500 hover:text-red-400 transition-colors"
+                                  className="text-gray-400 hover:text-red-600 transition-colors"
                                   title="Remove offer"
                                 >
                                   <Trash2 className="w-4 h-4" />
@@ -564,7 +614,7 @@ const SellerDashboard = () => {
             </motion.div>
           )}
 
-
+          {/* Brands Tab */}
           {activeTab === 'brands' && (
             <motion.div
               key="brands"
@@ -575,11 +625,11 @@ const SellerDashboard = () => {
               className="space-y-4"
             >
               {/* Info banner */}
-              <div className="bg-[#FF9900]/5 border border-[#FF9900]/20 rounded-2xl p-4 flex items-start gap-3">
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
                 <Shield className="w-5 h-5 text-[#FF9900] flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-semibold text-[#FF9900]">Brand Authorization</p>
-                  <p className="text-xs text-zinc-400 mt-0.5 leading-relaxed">
+                  <p className="text-sm font-semibold text-amber-700">Brand Authorization</p>
+                  <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
                     Request enrollment from a registered brand to become an authorized reseller.
                     Brand owners review and approve requests manually.
                   </p>
@@ -590,33 +640,33 @@ const SellerDashboard = () => {
                 <motion.div
                   initial={{ opacity: 0, y: -5 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-sm"
+                  className="p-3 bg-red-50 border border-red-200 text-red-600 rounded-xl text-sm"
                 >
                   {applyError}
                 </motion.div>
               )}
 
               {isLoadingBrands ? (
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-12 flex items-center justify-center">
-                  <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+                <div className="bg-white border border-gray-200 rounded-2xl p-12 flex items-center justify-center shadow-sm">
+                  <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
                 </div>
               ) : brands.length === 0 ? (
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-12 text-center">
-                  <Users className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
-                  <h3 className="text-lg font-bold mb-2">No Brands Registered</h3>
-                  <p className="text-zinc-400 text-sm">No brands have been registered on the platform yet.</p>
+                <div className="bg-white border border-gray-200 rounded-2xl p-12 text-center shadow-sm">
+                  <Users className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-bold text-gray-900 mb-2">No Brands Registered</h3>
+                  <p className="text-gray-500 text-sm">No brands have been registered on the platform yet.</p>
                 </div>
               ) : (
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
-                  <div className="p-5 border-b border-zinc-800">
-                    <h2 className="font-bold text-lg">Registered Brands ({brands.length})</h2>
-                    <p className="text-xs text-zinc-500 mt-0.5">
+                <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+                  <div className="p-5 border-b border-gray-200">
+                    <h2 className="font-bold text-lg text-gray-900">Registered Brands ({brands.length})</h2>
+                    <p className="text-xs text-gray-500 mt-0.5">
                       {approvedBrandsCount} authorized · {pendingBrandsCount} pending
                     </p>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left">
-                      <thead className="bg-zinc-800/50 text-xs text-zinc-400 border-b border-zinc-800">
+                      <thead className="bg-gray-50 text-xs text-gray-500 border-b border-gray-200">
                         <tr>
                           <th className="px-4 py-3 font-medium">Brand</th>
                           <th className="px-4 py-3 font-medium">Category</th>
@@ -631,42 +681,51 @@ const SellerDashboard = () => {
                             key={brand._id}
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
-                            className="border-b border-zinc-800/50 hover:bg-zinc-800/20 transition-colors"
+                            className="border-b border-gray-200 hover:bg-gray-50 transition-colors"
                           >
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-3">
                                 {brand.logoUrl ? (
-                                  <img src={brand.logoUrl} alt={brand.name} className="w-8 h-8 rounded object-contain bg-white p-0.5" />
+                                  <img
+                                    src={brand.logoUrl}
+                                    alt={brand.name}
+                                    className="w-8 h-8 rounded object-contain bg-gray-50 border border-gray-200 p-0.5"
+                                  />
                                 ) : (
                                   <div className="w-8 h-8 rounded bg-[#FF9900] flex items-center justify-center text-black font-bold text-xs flex-shrink-0">
                                     {brand.name?.[0]?.toUpperCase()}
                                   </div>
                                 )}
                                 <div>
-                                  <p className="font-medium text-sm">{brand.name}</p>
+                                  <p className="font-medium text-sm text-gray-900">{brand.name}</p>
                                   {brand.isVerified && (
-                                    <p className="text-[10px] text-emerald-400">✓ Verified</p>
+                                    <p className="text-[10px] text-[#007600]">✓ Verified</p>
                                   )}
                                 </div>
                               </div>
                             </td>
-                            <td className="px-4 py-3 text-xs text-zinc-400">
+                            <td className="px-4 py-3 text-xs text-gray-500">
                               {brand.category || '—'}
                             </td>
                             <td className="px-4 py-3">
                               {brand.protectedKeywords?.length > 0 ? (
                                 <div className="flex flex-wrap gap-1">
                                   {brand.protectedKeywords.slice(0, 3).map((kw) => (
-                                    <span key={kw} className="text-[10px] bg-zinc-800 text-zinc-300 px-1.5 py-0.5 rounded">
+                                    <span
+                                      key={kw}
+                                      className="text-[10px] bg-gray-100 text-gray-600 border border-gray-200 px-1.5 py-0.5 rounded"
+                                    >
                                       {kw}
                                     </span>
                                   ))}
                                   {brand.protectedKeywords.length > 3 && (
-                                    <span className="text-[10px] text-zinc-500">+{brand.protectedKeywords.length - 3}</span>
+                                    <span className="text-[10px] text-gray-400">
+                                      +{brand.protectedKeywords.length - 3}
+                                    </span>
                                   )}
                                 </div>
                               ) : (
-                                <span className="text-xs text-zinc-600">—</span>
+                                <span className="text-xs text-gray-400">—</span>
                               )}
                             </td>
                             <td className="px-4 py-3">
@@ -677,7 +736,7 @@ const SellerDashboard = () => {
                                 <button
                                   disabled={applyingId === brand._id}
                                   onClick={() => handleRequestEnrollment(brand._id)}
-                                  className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                                  className="flex items-center gap-1.5 text-xs bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
                                 >
                                   {applyingId === brand._id ? (
                                     <Loader2 className="w-3 h-3 animate-spin" />
@@ -690,12 +749,12 @@ const SellerDashboard = () => {
                                 <button
                                   disabled={applyingId === brand._id}
                                   onClick={() => handleRequestEnrollment(brand._id)}
-                                  className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                                  className="flex items-center gap-1.5 text-xs bg-white border border-gray-300 hover:bg-gray-50 text-gray-600 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
                                 >
                                   Re-apply
                                 </button>
                               ) : (
-                                <span className="text-xs text-zinc-600">—</span>
+                                <span className="text-xs text-gray-400">—</span>
                               )}
                             </td>
                           </motion.tr>
@@ -708,7 +767,7 @@ const SellerDashboard = () => {
             </motion.div>
           )}
 
-          {/* Phase 7 — Return Insights tab */}
+          {/* Return Insights Tab */}
           {activeTab === 'insights' && (
             <motion.div
               key="insights"
@@ -720,6 +779,7 @@ const SellerDashboard = () => {
               <ReturnInsightsPanel />
             </motion.div>
           )}
+
         </AnimatePresence>
       </div>
     </div>

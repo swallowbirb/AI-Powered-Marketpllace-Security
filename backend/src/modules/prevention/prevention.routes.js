@@ -6,7 +6,6 @@ const {
   validateObjectIdParam,
   validateCheckoutRisk,
   validateNudgePatch,
-  validatePostReturnQuery,
 } = require('./prevention.validation');
 const { requireAuth, attachUser } = require('../../middleware/auth.middleware');
 
@@ -43,9 +42,6 @@ router.post('/recompute', async (req, res, next) => {
 
 // Nudge tracking (§15)
 router.patch('/nudge-event/:id', validateObjectIdParam('id'), validateNudgePatch, ctrl.patchNudgeEvent);
-
-// Post-return feedback (§16)
-router.get('/post-return-message', validatePostReturnQuery, ctrl.getPostReturnMessage);
 
 // Refund timing — Phase 4 frozen interface
 router.get('/refund-timing', ctrl.getRefundTiming);

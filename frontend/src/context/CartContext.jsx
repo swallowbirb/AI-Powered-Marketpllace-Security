@@ -1,34 +1,55 @@
-import { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
 
 /**
- * Phase 7 — minimal client-side cart state for the bracketing demo.
+ * Client-side cart with localStorage persistence.
+ * No backend cart model — the cart lives in the browser.
  *
- * No cart backend exists. The /api/prevention/checkout-risk endpoint is
- * cart-agnostic — it scores whatever items[] you pass. This context just
- * holds the current cart in memory so the BracketingNudge has something to
- * detect and act on.
+ * Shape: cart = [{ productId, quantity, sizeSelected?, title?, price?, image? }]
  *
- * Shape: cart = [{ productId, quantity, sizeSelected? }]
+ * The extra fields (title, price, image) are stored when available so the cart
+ * page can render without fetching each product individually.
  */
+
+const STORAGE_KEY = 'marketplace_cart';
+
+function loadCart() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCart(cart) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cart));
+  } catch { /* quota exceeded — silently ignore */ }
+}
 
 const CartContext = createContext(null);
 
 export function CartProvider({ children }) {
-  const [cart, setCart] = useState([]);
+  const [cart, setCart] = useState(loadCart);
 
-  const addToCart = useCallback((productId, qty = 1, sizeSelected = null) => {
+  // Persist to localStorage on every change
+  useEffect(() => {
+    saveCart(cart);
+  }, [cart]);
+
+  const addToCart = useCallback((productId, qty = 1, meta = {}) => {
     setCart((prev) => {
       const existing = prev.find(
-        (i) => i.productId === productId && i.sizeSelected === sizeSelected
+        (i) => i.productId === productId && i.sizeSelected === (meta.sizeSelected || null)
       );
       if (existing) {
         return prev.map((i) =>
-          i.productId === productId && i.sizeSelected === sizeSelected
-            ? { ...i, quantity: i.quantity + qty }
+          i.productId === productId && i.sizeSelected === (meta.sizeSelected || null)
+            ? { ...i, quantity: i.quantity + qty, ...meta }
             : i
         );
       }
-      return [...prev, { productId, quantity: qty, sizeSelected }];
+      return [...prev, { productId, quantity: qty, sizeSelected: null, ...meta }];
     });
   }, []);
 
@@ -52,7 +73,6 @@ export function CartProvider({ children }) {
     );
   }, []);
 
-  /** Drop all duplicates of a productId (used by the bracketing "remove extras" CTA). */
   const keepOneOf = useCallback((productId) => {
     setCart((prev) => {
       const matching = prev.filter((i) => i.productId === productId);
@@ -64,16 +84,22 @@ export function CartProvider({ children }) {
 
   const clearCart = useCallback(() => setCart([]), []);
 
+  const cartCount = useMemo(
+    () => cart.reduce((sum, item) => sum + item.quantity, 0),
+    [cart]
+  );
+
   const value = useMemo(
     () => ({
       cart,
+      cartCount,
       addToCart,
       removeFromCart,
       setQuantity,
       keepOneOf,
       clearCart,
     }),
-    [cart, addToCart, removeFromCart, setQuantity, keepOneOf, clearCart]
+    [cart, cartCount, addToCart, removeFromCart, setQuantity, keepOneOf, clearCart]
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
@@ -82,10 +108,9 @@ export function CartProvider({ children }) {
 export function useCart() {
   const ctx = useContext(CartContext);
   if (!ctx) {
-    // Soft fallback so a component using `useCart()` outside the provider
-    // doesn't crash — it just operates on an empty cart.
     return {
       cart: [],
+      cartCount: 0,
       addToCart: () => {},
       removeFromCart: () => {},
       setQuantity: () => {},
