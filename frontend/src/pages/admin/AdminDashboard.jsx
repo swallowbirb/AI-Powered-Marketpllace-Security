@@ -950,6 +950,10 @@ const FestiveTab = () => {
         "Force ON" activates festive levers regardless of today's date — safe for demos.
         Only one event can be forced at a time. Real-date events activate automatically when the calendar matches.
       </p>
+    </div>
+  );
+};
+
 // ─── Prompts Tab (AI Grader fine-tuning) ──────────────────────────────────────
 
 const PromptsTab = () => {
