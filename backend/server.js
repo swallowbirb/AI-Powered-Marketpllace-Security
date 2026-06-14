@@ -33,6 +33,7 @@ const trustRoutes = require("./src/modules/trust/trust.routes");
 const uploadsRoutes = require("./src/modules/uploads/uploads.routes");
 const itemsRoutes = require("./src/modules/items/item.routes");
 const lifecycleRoutes = require("./src/modules/lifecycle/lifecycle.routes");
+const preventionRoutes = require("./src/modules/prevention/prevention.routes");
 
 const app = express();
 
@@ -98,6 +99,7 @@ app.use("/api/trust", trustRoutes);
 app.use("/api/uploads", uploadsRoutes);
 app.use("/api/items", itemsRoutes);
 app.use("/api/lifecycle", lifecycleRoutes);
+app.use("/api/prevention", preventionRoutes);
 
 // Error Handler
 app.use(errorHandler);
