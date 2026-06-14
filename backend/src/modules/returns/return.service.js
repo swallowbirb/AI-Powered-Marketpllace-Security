@@ -8,7 +8,7 @@ const RETURN_WINDOW_DAYS = 30;
 /**
  * Initiate a return for a completed order.
  */
-const initiateReturn = async (userId, { orderId, reasonCode, reasonText }) => {
+const initiateReturn = async (userId, { orderId, reasonCode, reasonText, clarifyingPhotos }) => {
   // Verify order belongs to user and is completed
   const order = await Order.findOne({ _id: orderId, buyerId: userId, status: 'completed' })
     .populate('productId', 'title category')
@@ -81,13 +81,18 @@ const initiateReturn = async (userId, { orderId, reasonCode, reasonText }) => {
   // Back-link the item to the return record
   await require('../items/item.model').findByIdAndUpdate(item._id, { returnId: returnRecord._id });
 
-  return { itemId: item._id, returnId: returnRecord._id, status: item.status };
+  // v3.44 — kick off the dynamic, product- & claim-specific Pass-1 form right away
+  // and move the item into AWAITING_EVIDENCE. Fire-and-forget; never blocks intake.
+  await itemService.requestEvidenceForm(item._id, actor, { clarifyingPhotos });
+
+  return { itemId: item._id, returnId: returnRecord._id, status: 'AWAITING_EVIDENCE' };
 };
 
 /**
  * Attach evidence photos and trigger grading.
+ * v3.44 — accepts an optional field→image mapping from the dynamic form.
  */
-const submitEvidence = async (userId, itemId, photos) => {
+const submitEvidence = async (userId, itemId, photos, fieldImages) => {
   const item = await require('../items/item.model').findById(itemId).lean();
   if (!item) throw new Error('Item not found');
   if (item.initiatorUserId.toString() !== userId.toString()) throw new Error('Forbidden');
@@ -98,7 +103,7 @@ const submitEvidence = async (userId, itemId, photos) => {
     return item;
   }
 
-  return itemService.attachEvidence(itemId, photos, { userId, role: 'buyer' });
+  return itemService.attachEvidence(itemId, photos, { userId, role: 'buyer' }, { fieldImages });
 };
 
 /**

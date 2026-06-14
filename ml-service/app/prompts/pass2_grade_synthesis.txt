@@ -28,5 +28,8 @@ RULES:
 - If the summary reports any analysis as failed/unavailable, list the dependent fields
   in missingEvidence and set confidence to medium or low (never high).
 - If a hard or soft fraud signal is present, reflect it in the rationale and grade.
+- If the summary includes "field_images"/"evidence_fields", reference findings by the
+  named evidence field they came from (e.g. "sole_photo shows heavy tread wear") rather
+  than by generic photo numbers, and put that field name in each defect's "location".
 - grade, confidence, and routingHint MUST be one of the allowed enum values exactly.
 - Return ONLY the JSON object, no surrounding text.

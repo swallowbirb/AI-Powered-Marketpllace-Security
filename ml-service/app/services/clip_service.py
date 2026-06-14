@@ -61,7 +61,15 @@ class CLIPService:
         inputs = processor(images=image, return_tensors="pt")
         with torch.no_grad():
             feats = model.get_image_features(**inputs)
-        vec = feats[0].cpu().numpy().astype("float32")
+        # transformers >=5 returns a BaseModelOutputWithPooling object whose
+        # pooled (512-dim) embedding lives in `.pooler_output`; older versions
+        # returned the embedding tensor directly. Support both.
+        pooled = getattr(feats, "pooler_output", None)
+        if pooled is None and isinstance(feats, dict):
+            pooled = feats.get("pooler_output")
+        if pooled is None:
+            pooled = feats  # legacy: tensor of shape (1, dim)
+        vec = pooled[0].cpu().numpy().astype("float32")
         norm = np.linalg.norm(vec)
         return vec / norm if norm > 0 else vec
 

@@ -14,6 +14,9 @@ router.post('/trigger', validateTriggerGrading, gradingController.triggerGrading
 router.post('/form/:itemId', gradingController.startForm);
 router.get('/form/:itemId', gradingController.getForm);
 
+// Per-photo validation proxy (v3.44) — inline "right part? in focus?" feedback.
+router.post('/validate-photo', gradingController.validatePhoto);
+
 // Flagged grades for the seller/admin dashboard (Req 9.4 / 9.5).
 router.get(
   '/flagged',

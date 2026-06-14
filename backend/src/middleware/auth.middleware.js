@@ -18,10 +18,6 @@ const requireAuth = (req, res, next) => {
 const attachUser = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
-    console.log('--- Incoming Request JWT Token ---');
-    console.log(token);
-    console.log('----------------------------------');
-
     if (!req.auth || !req.auth.userId) {
       return res
         .status(401)

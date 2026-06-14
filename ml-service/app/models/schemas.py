@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 class GradingRequest(BaseModel):
     item_id: str
-    photos: List[str]  # S3 URLs
+    photos: List[str]  # S3 URLs (flat union of all provided images)
     category: Optional[str] = None
     return_claim_description: Optional[str] = None
     original_product_id: Optional[str] = None
@@ -14,6 +14,9 @@ class GradingRequest(BaseModel):
     listing_image_urls: List[str] = []
     catalog_hashes: List[str] = []
     expected_subject: Optional[str] = None
+    # v3.44 — field → [image URLs] mapping from the dynamic Pass-1 form, so Pass 2
+    # can reference photos by the named field they answer (improvement #3).
+    field_images: Dict[str, List[str]] = {}
 
 
 class DefectDetail(BaseModel):
@@ -66,11 +69,16 @@ class PhotoValidationResponse(BaseModel):
 # --- Form generation (Pass 1) ---
 
 class FormRequest(BaseModel):
-    product_id: str
+    product_id: Optional[str] = None
     reason: str
     category: Optional[str] = None
     initial_photos: List[str] = []
+    # Catalog reference photos of the product (what it looks like new). Attached to
+    # the Pass-1 multimodal prompt so the form is tailored to THIS specific product,
+    # not just its category.
+    listing_image_urls: List[str] = []
     listing_data: Dict[str, Any] = {}
+    seller_prompt: Optional[str] = None
 
 
 class FormResponse(BaseModel):

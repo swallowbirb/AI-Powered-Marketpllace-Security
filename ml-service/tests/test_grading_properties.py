@@ -137,6 +137,56 @@ def test_normalize_reason():
     assert normalize_reason("ALL\tCAPS\nHERE") == "all caps here"
 
 
+# --------------------------------------------------------------------------- #
+# v3.44 — cache key category fallback + punctuation normalization
+# --------------------------------------------------------------------------- #
+def test_cache_key_category_fallback_when_no_product():
+    # No productId => key derived from category + reason, and is stable.
+    k1 = cache_key(None, "too tight", category="footwear")
+    k2 = cache_key(None, "too tight", category="footwear")
+    assert k1 == k2
+    # Different category => different key.
+    assert cache_key(None, "too tight", category="apparel") != k1
+    # productId path differs from category path for the same reason.
+    assert cache_key("prod123", "too tight", category="footwear") != k1
+
+
+def test_normalize_reason_strips_punctuation():
+    # "Too tight!" and "too tight" must collide (improvement #8).
+    assert normalize_reason("Too tight!") == normalize_reason("too tight")
+    assert normalize_reason("too-tight") == "too tight"
+    assert cache_key("p", "Too tight!") == cache_key("p", "too tight")
+
+
+# --------------------------------------------------------------------------- #
+# v3.44 — Form schema normalization (field clamp + expected_subject backfill)
+# --------------------------------------------------------------------------- #
+def test_form_schema_normalization_clamps_and_backfills():
+    from app.services.form_generator import _normalize_schema, MAX_PHOTO_FIELDS, SCHEMA_VERSION
+
+    fields = [{"id": f"p{i}", "type": "photo", "label": f"Photo {i}"} for i in range(MAX_PHOTO_FIELDS + 5)]
+    fields.append({"id": "notes", "type": "text", "label": "Notes"})
+    schema = _normalize_schema({"title": "t", "fields": fields}, "footwear")
+
+    photo_fields = [f for f in schema["fields"] if f["type"] == "photo"]
+    text_fields = [f for f in schema["fields"] if f["type"] == "text"]
+    # Photo fields clamped; non-photo fields preserved.
+    assert len(photo_fields) == MAX_PHOTO_FIELDS
+    assert len(text_fields) == 1
+    # expected_subject backfilled for every photo field.
+    assert all(f.get("expected_subject") for f in photo_fields)
+    assert schema["schemaVersion"] == SCHEMA_VERSION
+
+
+def test_generic_default_schema_has_expected_subjects():
+    from app.services.form_generator import generic_default_schema
+    schema = generic_default_schema("footwear")
+    photo_fields = [f for f in schema["fields"] if f["type"] == "photo"]
+    assert photo_fields
+    assert all(f.get("expected_subject") for f in photo_fields)
+    assert schema["schemaVersion"] >= 1
+
+
 def test_ttl_cache_hit_and_miss():
     c = TTLCache(ttl_seconds=3600)
     c.set("k", {"a": 1})
@@ -179,6 +229,28 @@ def test_json_extraction_errors():
 # --------------------------------------------------------------------------- #
 # Minimal fallback runner (when pytest is unavailable)
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# v3.44 — field→image mapping surfaces in the Analysis_Summary (improvement #3)
+# --------------------------------------------------------------------------- #
+def test_run_analysis_surfaces_field_images():
+    import asyncio
+    from app.services import analysis_orchestrator as ao
+
+    # No photos / listing images => analyses short-circuit to unavailable, but the
+    # field_images mapping must still be threaded into the summary for Pass 2.
+    field_images = {"sole_photo": ["s3://a"], "upper_photo": ["s3://b", "s3://c"]}
+    summary = asyncio.run(ao.run_analysis(
+        photos=["s3://a", "s3://b", "s3://c"],
+        listing_images=[],
+        fraud_outcome={"classification": "CLEAN"},
+        category="footwear",
+        reason="too tight",
+        field_images=field_images,
+    ))
+    assert summary["field_images"] == field_images
+    assert summary["evidence_fields"] == ["sole_photo", "upper_photo"]
+
+
 if __name__ == "__main__":
     funcs = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     failed = 0
