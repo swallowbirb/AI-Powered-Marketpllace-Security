@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     min_width: int = 800
     min_height: int = 600
 
+    # --- Phase 7 prevention tunables ---
+    return_model_path: str = "trained_models/return_model.txt"
+    return_calibrator_path: str = "trained_models/calibrator.joblib"
+    return_feature_spec_path: str = "trained_models/feature_spec.json"
+    risk_high_threshold: float = 0.55
+    risk_medium_threshold: float = 0.30
+
     class Config:
         env_file = ".env"
         case_sensitive = False

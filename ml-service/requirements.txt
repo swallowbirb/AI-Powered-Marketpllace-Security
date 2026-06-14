@@ -14,3 +14,9 @@ pydantic-settings==2.5.0
 # --- CLIP (Task 2.2) — CPU build is fine for the demo ---
 torch==2.2.2
 transformers==4.44.2
+
+# --- Phase 7 prevention (LightGBM model is OPTIONAL — scorecard fallback always works)
+# Install these only if you want to train + serve the model. The scorecard runs without them.
+lightgbm==4.5.0
+scikit-learn==1.5.2
+joblib==1.4.2

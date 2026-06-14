@@ -81,3 +81,32 @@ class FormResponse(BaseModel):
     cached: bool
     key: str
     trace: List[Dict[str, Any]] = []
+
+
+# --- Prevention (Phase 7) ---
+
+class ReturnRiskRequest(BaseModel):
+    """Feature payload built by the backend prevention service."""
+    features: Dict[str, Any]
+
+
+class ReturnRiskResponse(BaseModel):
+    return_probability: float
+    risk_band: str                  # low | medium | high
+    scorecard_score: int
+    top_reasons: List[Dict[str, Any]] = []
+    used_fallback: bool
+    model_version: str
+
+
+class FitRecommendRequest(BaseModel):
+    fit_signal: Optional[Dict[str, Any]] = None
+    category: Optional[str] = None
+    kept_brand_history: Optional[Dict[str, Any]] = None
+
+
+class FitRecommendResponse(BaseModel):
+    verdict: str                    # runs_small | true_to_size | runs_large | unknown
+    message: Optional[str] = None
+    confidence: float = 0.0
+    suggested_action: Optional[str] = None  # SIZE_UP | SIZE_DOWN | None
