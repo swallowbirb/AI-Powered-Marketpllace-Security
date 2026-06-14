@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { getItemStatus, updateItemNotes } from '../services/item.service';
 import DeveloperLogsSidebar from '../components/shared/DeveloperLogsSidebar';
 import TrustTierBadge from '../components/shared/TrustTierBadge';
+import RoutingRationale from '../components/routing/RoutingRationale';
 import {
   Loader2, CheckCircle2, Clock, AlertCircle, Recycle, ShoppingBag, Package, ChevronDown, Pencil,
 } from 'lucide-react';
@@ -238,9 +239,9 @@ export default function ItemStatusPage() {
                     </div>
                   )}
 
-                  {/* Routing placeholder */}
-                  <div className="mt-5 border border-dashed border-gray-200 rounded-xl p-4 text-center">
-                    <p className="text-xs text-gray-400">Routing decision will appear here</p>
+                  {/* Routing decision (Phase A) */}
+                  <div className="mt-5">
+                    <RoutingRationale itemId={itemId} />
                   </div>
                 </motion.div>
               ) : (
