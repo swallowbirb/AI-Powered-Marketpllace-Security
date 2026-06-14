@@ -147,6 +147,8 @@
     "seed": "node seed.js",
     "seed:trust": "node seed-trust.js",
     "seed:prevention": "node seed-prevention.js",
+    "seed:festive": "node seed-festive-calendar.js",
+    "smoke:festive": "node smoke-festive.js",
     "prevention:recompute": "node -e \"require('dotenv').config(); require('mongoose').connect(process.env.MONGODB_URI).then(async () => { const { recomputeReturnInsights } = require('./src/modules/prevention/prevention.job'); const r = await recomputeReturnInsights(); console.log('recompute result:', r); process.exit(0); });\""
   },
   "keywords": [],

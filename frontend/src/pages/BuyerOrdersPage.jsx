@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getBuyerOrders } from '../services/order.service';
+import { getBuyerOrders, cancelOrder, advanceFulfillment } from '../services/order.service';
 import { initiateReturn } from '../services/return.service';
 import { getMyItems } from '../services/item.service';
-import { Package, Loader2, Calendar, CreditCard, ChevronRight, RotateCcw, X, ChevronDown, Activity, ArrowRight } from 'lucide-react';
+import { Package, Loader2, Calendar, CreditCard, ChevronRight, RotateCcw, X, ChevronDown, Activity, ArrowRight, Truck, Banknote, Ban } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const REASON_OPTIONS = [
@@ -13,6 +13,16 @@ const REASON_OPTIONS = [
   { value: 'changed_mind', label: 'Changed my mind' },
   { value: 'other', label: 'Other' },
 ];
+
+// Fulfillment lifecycle (Phase 7.5) — label + the next step for the demo "advance" control.
+const FULFILLMENT_FLOW = ['placed', 'dispatched', 'in_transit', 'out_for_delivery', 'delivered'];
+const FULFILLMENT_META = {
+  placed:          { label: 'Order placed',     color: 'bg-gray-100 text-gray-600' },
+  dispatched:      { label: 'Dispatched',       color: 'bg-blue-100 text-blue-700' },
+  in_transit:      { label: 'In transit',       color: 'bg-indigo-100 text-indigo-700' },
+  out_for_delivery:{ label: 'Out for delivery', color: 'bg-amber-100 text-amber-700' },
+  delivered:       { label: 'Delivered',        color: 'bg-emerald-100 text-emerald-700' },
+};
 
 // Maps item status to a human label + color
 const STATUS_META = {
@@ -41,6 +51,55 @@ export default function BuyerOrdersPage() {
   const [reasonText, setReasonText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [returnError, setReturnError] = useState(null);
+
+  // Phase 7.5 — per-order action state (cancel lock + fulfillment advance demo).
+  const [actionOrderId, setActionOrderId] = useState(null);   // order currently mutating
+  const [orderNotice, setOrderNotice] = useState({});         // { [orderId]: { type, message } }
+
+  const patchOrder = (orderId, fields) =>
+    setOrders((prev) => prev.map((o) => (o._id === orderId ? { ...o, ...fields } : o)));
+
+  const handleAdvanceFulfillment = async (order) => {
+    const current = order.fulfillmentStatus || 'placed';
+    const idx = FULFILLMENT_FLOW.indexOf(current);
+    const next = FULFILLMENT_FLOW[Math.min(idx + 1, FULFILLMENT_FLOW.length - 1)];
+    if (next === current) return;
+    setActionOrderId(order._id);
+    setOrderNotice((n) => ({ ...n, [order._id]: null }));
+    try {
+      const res = await advanceFulfillment(order._id, next);
+      if (res.success) patchOrder(order._id, { fulfillmentStatus: res.data.fulfillmentStatus });
+    } catch (err) {
+      setOrderNotice((n) => ({
+        ...n,
+        [order._id]: { type: 'error', message: err.response?.data?.message || 'Could not advance shipping.' },
+      }));
+    } finally {
+      setActionOrderId(null);
+    }
+  };
+
+  const handleCancelOrder = async (order) => {
+    setActionOrderId(order._id);
+    setOrderNotice((n) => ({ ...n, [order._id]: null }));
+    try {
+      const res = await cancelOrder(order._id);
+      if (res.success) {
+        patchOrder(order._id, { status: 'cancelled' });
+        setOrderNotice((n) => ({ ...n, [order._id]: { type: 'success', message: 'Order cancelled.' } }));
+      }
+    } catch (err) {
+      const code = err.response?.data?.code;
+      const message =
+        code === 'CANCEL_LOCKED'
+          ? err.response?.data?.message ||
+            'This order is in transit during the festive sale and can’t be cancelled. You can refuse delivery at the door, or return it after it arrives.'
+          : err.response?.data?.message || 'Could not cancel this order.';
+      setOrderNotice((n) => ({ ...n, [order._id]: { type: code === 'CANCEL_LOCKED' ? 'locked' : 'error', message } }));
+    } finally {
+      setActionOrderId(null);
+    }
+  };
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -202,9 +261,23 @@ export default function BuyerOrdersPage() {
                     </div>
 
                     <div className="p-6">
-                      <h3 className="font-bold text-emerald-600 mb-4 flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-emerald-500" /> Delivered instantly
-                      </h3>
+                      {(() => {
+                        const fs = order.fulfillmentStatus || 'placed';
+                        const fm = FULFILLMENT_META[fs] || FULFILLMENT_META.placed;
+                        const cancelled = order.status === 'cancelled';
+                        return (
+                          <div className="flex items-center gap-2 mb-4">
+                            <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${cancelled ? 'bg-red-100 text-red-600' : fm.color}`}>
+                              {cancelled ? 'Cancelled' : fm.label}
+                            </span>
+                            {order.festivePolicy?.festive && (
+                              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                                Festive order
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                       <div className="flex flex-col sm:flex-row gap-6">
                         <div className="w-24 h-24 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 p-2 overflow-hidden border border-gray-200">
                           {itemImage ? (
@@ -243,14 +316,61 @@ export default function BuyerOrdersPage() {
                               <RotateCcw className="w-3.5 h-3.5" />
                               Return item
                             </button>
+
+                            {/* Phase 7.5 — cancel (festive lock may block) + demo shipping advance */}
+                            {order.status !== 'cancelled' && (order.fulfillmentStatus || 'placed') !== 'delivered' && (
+                              <>
+                                <button
+                                  onClick={() => handleCancelOrder(order)}
+                                  disabled={actionOrderId === order._id}
+                                  className="inline-flex items-center gap-1.5 justify-center bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium px-4 py-2 rounded-lg text-sm transition-colors shadow-sm disabled:opacity-50"
+                                >
+                                  <Ban className="w-3.5 h-3.5" />
+                                  Cancel order
+                                </button>
+                                <button
+                                  onClick={() => handleAdvanceFulfillment(order)}
+                                  disabled={actionOrderId === order._id}
+                                  title="Demo: simulate the next shipping step"
+                                  className="inline-flex items-center gap-1.5 justify-center bg-white border border-dashed border-gray-300 hover:bg-gray-50 text-gray-500 font-medium px-4 py-2 rounded-lg text-sm transition-colors disabled:opacity-50"
+                                >
+                                  <Truck className="w-3.5 h-3.5" />
+                                  Advance shipping
+                                </button>
+                              </>
+                            )}
                           </div>
+
+                          {/* Action notice (cancel lock / success / error) */}
+                          {orderNotice[order._id] && (
+                            <div
+                              className={`mt-3 text-xs rounded-lg px-3 py-2 border ${
+                                orderNotice[order._id].type === 'locked'
+                                  ? 'bg-orange-50 border-orange-200 text-orange-800'
+                                  : orderNotice[order._id].type === 'success'
+                                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                                  : 'bg-red-50 border-red-200 text-red-600'
+                              }`}
+                            >
+                              {orderNotice[order._id].message}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
 
                     <div className="bg-gray-50 px-6 py-3 border-t border-gray-100 flex items-center gap-2 text-xs text-gray-500">
-                      <CreditCard className="w-4 h-4 text-gray-400" />
-                      Paid with mock card ending in {order.paymentDetails?.mockCreditCard?.slice(-4) || '****'}
+                      {order.paymentMethod === 'cod' ? (
+                        <>
+                          <Banknote className="w-4 h-4 text-gray-400" />
+                          Cash on Delivery
+                        </>
+                      ) : (
+                        <>
+                          <CreditCard className="w-4 h-4 text-gray-400" />
+                          Paid with mock card ending in {order.paymentDetails?.mockCreditCard?.slice(-4) || '****'}
+                        </>
+                      )}
                     </div>
                   </div>
                 );

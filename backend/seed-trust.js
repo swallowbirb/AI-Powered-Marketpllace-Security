@@ -8,6 +8,9 @@
  * Run: node seed-trust.js
  */
 require('dotenv').config();
+const dns = require('dns');
+dns.setDefaultResultOrder('ipv4first');
+dns.setServers(['8.8.8.8', '8.8.4.4']);
 const mongoose = require('mongoose');
 
 const User = require('./src/modules/users/user.model');
@@ -83,9 +86,8 @@ async function createReturn(buyer, order, { createdDaysAgo = 10 } = {}) {
     orderId: order._id,
     userId: buyer._id,
     itemId: new mongoose.Types.ObjectId(),
-    reason: 'changed_mind',
-    status: 'completed',
-    claimDescription: 'p3-trust-demo',
+    reasonCode: 'changed_mind',
+    reasonText: 'p3-trust-demo',
   });
   await backdate(Return, r._id, daysAgo(createdDaysAgo));
   return r;

@@ -20,8 +20,13 @@ const validateCreateOrder = (req, res, next) => {
     errors.push('quantity must be a positive integer');
   }
 
-  if (!mockCreditCard || typeof mockCreditCard !== 'string') {
-    errors.push('mockCreditCard is required as a string for payment simulation');
+  // Phase 7.5 — payment method. Prepaid requires a mock card; COD does not.
+  const method = req.body.paymentMethod || 'prepaid';
+  if (!['prepaid', 'cod'].includes(method)) {
+    errors.push('paymentMethod must be either "prepaid" or "cod"');
+  }
+  if (method === 'prepaid' && (!mockCreditCard || typeof mockCreditCard !== 'string')) {
+    errors.push('mockCreditCard is required as a string for prepaid payment simulation');
   }
 
   if (errors.length > 0) {

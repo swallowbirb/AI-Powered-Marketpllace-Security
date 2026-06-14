@@ -71,11 +71,11 @@ export default function ProductDetailPage() {
     setShowCheckout(true);
   };
 
-  const handleConfirmPurchase = async (mockCreditCard) => {
+  const handleConfirmPurchase = async (mockCreditCard, paymentMethod = 'prepaid') => {
     setIsOrdering(true);
     setOrderError('');
     try {
-      const res = await createOrder({ productId: id, quantity: 1, mockCreditCard });
+      const res = await createOrder({ productId: id, quantity: 1, mockCreditCard, paymentMethod });
       if (res.success) {
         setShowCheckout(false);
         setOrderSuccess(true);
@@ -88,6 +88,10 @@ export default function ProductDetailPage() {
         if (productRes.success) setProduct(productRes.data);
       }
     } catch (err) {
+      if (err.response?.data?.code === 'COD_NOT_AVAILABLE') {
+        setOrderError('Cash on Delivery isn’t available for this order during the festive sale. Please pay by card.');
+        return; // keep the modal open so the buyer can switch to card
+      }
       const errorMsg = err.response?.data?.errors 
         ? err.response.data.errors.join(', ')
         : err.response?.data?.message || 'Failed to place order. Please try again.';

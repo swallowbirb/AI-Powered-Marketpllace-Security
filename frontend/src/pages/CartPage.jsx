@@ -60,7 +60,7 @@ export default function CartPage() {
 
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  const handleCheckoutAll = async (mockCreditCard) => {
+  const handleCheckoutAll = async (mockCreditCard, paymentMethod = 'prepaid') => {
     if (!mongoUser || role !== 'buyer') return;
     setOrdering(true);
     setOrderError('');
@@ -72,6 +72,7 @@ export default function CartPage() {
             productId: item.productId,
             quantity: item.quantity,
             mockCreditCard,
+            paymentMethod,
           })
         )
       );
@@ -85,10 +86,14 @@ export default function CartPage() {
         clearCart();
       }
     } catch (err) {
-      setOrderError(
-        err.response?.data?.message || 'Failed to place orders. Please try again.'
-      );
-      setShowCheckout(false);
+      if (err.response?.data?.code === 'COD_NOT_AVAILABLE') {
+        setOrderError('Cash on Delivery isn’t available for this order during the festive sale. Please pay by card.');
+      } else {
+        setOrderError(
+          err.response?.data?.message || 'Failed to place orders. Please try again.'
+        );
+        setShowCheckout(false);
+      }
     } finally {
       setOrdering(false);
     }
