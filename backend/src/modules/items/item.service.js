@@ -170,14 +170,25 @@ const attachEvidence = async (itemId, photos, actor, opts = {}) => {
 
   const fieldImages = opts.fieldImages && typeof opts.fieldImages === 'object'
     ? opts.fieldImages : null;
+  const additionalNotes = opts.additionalNotes && opts.additionalNotes.trim()
+    ? opts.additionalNotes.trim() : null;
 
   // --- Required-field gating (improvement #7) ---
   // If the item has a persisted AI/generic form, ensure every required photo field
   // has at least one image before we burn a grading pass.
   const formSchema = item.evidenceForm && item.evidenceForm.schema;
   if (fieldImages && formSchema && Array.isArray(formSchema.fields)) {
+    // Temporarily hidden fields (serial/model-label) are not required for now —
+    // mirrors the frontend filter so the gate doesn't block on a field the user never sees.
+    const isHiddenField = (f) => {
+      const s = `${f.id || ''} ${f.label || ''} ${f.expected_subject || ''}`.toLowerCase();
+      return /serial|imei/.test(s)
+        || /(brand|model)[^a-z]{0,12}label/.test(s)
+        || /label[^a-z]{0,12}(serial|brand|model)/.test(s)
+        || f.id === 'label_photo';
+    };
     const missing = formSchema.fields
-      .filter((f) => f && f.required && f.type === 'photo')
+      .filter((f) => f && f.required && f.type === 'photo' && !isHiddenField(f))
       .filter((f) => !(Array.isArray(fieldImages[f.id]) && fieldImages[f.id].length > 0))
       .map((f) => f.label || f.id);
     if (missing.length > 0) {
@@ -199,6 +210,15 @@ const attachEvidence = async (itemId, photos, actor, opts = {}) => {
   // Persist the field→image mapping so Pass 2 can reference photos by field name.
   if (fieldImages) {
     item.evidenceFieldImages = fieldImages;
+  }
+
+  // Append additional notes (buyer's free-text) to the item's description so the
+  // grading pipeline can reason over the user's own words alongside the photos.
+  if (additionalNotes) {
+    const existing = item.description ? item.description.trim() : '';
+    item.description = existing
+      ? `${existing}\n\nAdditional notes (at submission): ${additionalNotes}`
+      : additionalNotes;
   }
 
   await ItemLogger.log(itemId, 'EVIDENCE_SUBMIT', `📤 Evidence submitted: ${photos.length} photo(s)` +
@@ -240,7 +260,10 @@ const attachEvidence = async (itemId, photos, actor, opts = {}) => {
         evidencePhotos: allPhotos,
         fieldImages: item.evidenceFieldImages || {},
         category: item.category,
-        reason: item.reasonText || item.description || undefined,
+        // Compose reason: original claim + any additional notes the buyer just submitted.
+        reason: [item.reasonText, additionalNotes, item.description]
+          .filter(Boolean)
+          .join('\n\n') || undefined,
         intakePath: item.intakePath === 'return' ? 'returns' : 'sell-used',
         originalProductId: item.originalProductId?.toString() || null,
       })
@@ -372,11 +395,45 @@ const getItemStatus = async (itemId) => {
     reasonText: item.reasonText || null,
     evidenceForm: item.evidenceForm || null,
     clarifyingPhotos: item.clarifyingPhotos || [],
+    ownerNotes: item.ownerNotes || '',
     grade: grade || null,
     routingDecision: null, // populated in P4
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
   };
+};
+
+/**
+ * Add/update previous-owner notes on an item (Phase B — B4).
+ * Initiator-only; allowed once the item is graded (status ≥ GRADED). If a
+ * resale listing already exists, the note is mirrored onto it.
+ */
+const POST_GRADED_STATUSES = ['GRADED', 'ROUTED', 'IN_TRANSIT', 'LISTED', 'SOLD', 'DONATED', 'LIQUIDATED'];
+
+const addOwnerNotes = async (itemId, userId, notes) => {
+  const item = await Item.findById(itemId);
+  if (!item) throw new Error('Item not found');
+  if (item.initiatorUserId.toString() !== userId.toString()) throw new Error('Forbidden');
+  if (!POST_GRADED_STATUSES.includes(item.status)) {
+    throw new Error('Notes can only be added once the item has been graded');
+  }
+
+  item.ownerNotes = typeof notes === 'string' ? notes.trim() : '';
+  await item.save();
+
+  await ItemLogger.log(itemId, 'OWNER_NOTES', '📝 Previous-owner notes updated', {
+    length: item.ownerNotes.length,
+  });
+
+  // Mirror onto an existing resale listing, if any (defensive — module optional).
+  try {
+    const ResaleListing = require('../resale/resale.model');
+    await ResaleListing.findOneAndUpdate({ itemId }, { previousOwnerNotes: item.ownerNotes });
+  } catch (_) {
+    /* resale module optional */
+  }
+
+  return item;
 };
 
 module.exports = {
@@ -388,4 +445,5 @@ module.exports = {
   getItemById,
   getItemsByUser,
   getItemStatus,
+  addOwnerNotes,
 };

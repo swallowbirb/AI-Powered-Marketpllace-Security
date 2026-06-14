@@ -9,15 +9,49 @@ from PIL import Image
 
 def compute_blur_score(image_bytes: bytes) -> float:
     """
-    Returns Laplacian variance as a blur score.
+    Returns a blur score derived from Laplacian variance.
+
+    Naive whole-image variance is fragile: a sharp photo that contains a large
+    dark or uniform region (e.g. a powered-off phone screen against a bedsheet)
+    has very little texture overall and reads as "blurry" even though the
+    in-focus details are crisp. We instead split the image into a 4×4 grid and
+    take the *maximum* per-tile variance — a photo is "in focus" when at least
+    one region of it is sharp, regardless of how much smooth/dark area surrounds
+    it. The whole-image variance is taken into account too (max of both).
+
     Lower = more blurry. Threshold ~100 for acceptable quality.
-    TODO: tune threshold during Phase 2
     """
     try:
         import cv2
         img = Image.open(io.BytesIO(image_bytes)).convert("L")
         img_np = np.array(img)
-        return float(cv2.Laplacian(img_np, cv2.CV_64F).var())
+
+        # Whole-image variance (legacy signal).
+        global_var = float(cv2.Laplacian(img_np, cv2.CV_64F).var())
+
+        # Tile-based max variance: split into a 4×4 grid, drop tiles that are
+        # almost entirely dark (mean < 25, e.g. an OFF screen) so they don't
+        # poison the maximum. Take the largest variance from what remains.
+        h, w = img_np.shape
+        rows, cols = 4, 4
+        tile_h = max(1, h // rows)
+        tile_w = max(1, w // cols)
+        tile_vars = []
+        for r in range(rows):
+            for c in range(cols):
+                y0, x0 = r * tile_h, c * tile_w
+                y1 = h if r == rows - 1 else y0 + tile_h
+                x1 = w if c == cols - 1 else x0 + tile_w
+                tile = img_np[y0:y1, x0:x1]
+                if tile.size == 0:
+                    continue
+                # Skip near-black tiles — they have no texture by definition.
+                if float(tile.mean()) < 25.0:
+                    continue
+                tile_vars.append(float(cv2.Laplacian(tile, cv2.CV_64F).var()))
+
+        local_max = max(tile_vars) if tile_vars else 0.0
+        return max(global_var, local_max)
     except ImportError:
         raise RuntimeError("opencv-python-headless not installed")
 
@@ -30,6 +64,28 @@ def compute_brightness_score(image_bytes: bytes) -> float:
     img = Image.open(io.BytesIO(image_bytes)).convert("L")
     img_np = np.array(img, dtype=np.float32)
     return float(img_np.mean())
+
+
+def compute_center_brightness(image_bytes: bytes, fraction: float = 0.5) -> float:
+    """
+    Mean brightness (0-255) of the centre `fraction` of the image.
+
+    Used to verify state claims like "powered-on screen": the screen typically
+    occupies the centre of the frame, so a centre crop is far more diagnostic
+    than the whole-image mean (which is dominated by background — bedsheet,
+    table, hand). A powered-off screen reads near 0; a powered-on screen
+    showing content reads ~70-200.
+    """
+    img = Image.open(io.BytesIO(image_bytes)).convert("L")
+    arr = np.array(img, dtype=np.float32)
+    h, w = arr.shape
+    cy, cx = h // 2, w // 2
+    half_h = max(1, int(h * fraction / 2))
+    half_w = max(1, int(w * fraction / 2))
+    crop = arr[max(0, cy - half_h):cy + half_h, max(0, cx - half_w):cx + half_w]
+    if crop.size == 0:
+        return float(arr.mean())
+    return float(crop.mean())
 
 
 def check_min_resolution(image_bytes: bytes, min_width: int = 800, min_height: int = 600) -> bool:

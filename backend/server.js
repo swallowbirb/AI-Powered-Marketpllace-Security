@@ -35,6 +35,8 @@ const itemsRoutes = require("./src/modules/items/item.routes");
 const lifecycleRoutes = require("./src/modules/lifecycle/lifecycle.routes");
 const preventionRoutes = require("./src/modules/prevention/prevention.routes");
 const festiveRoutes = require("./src/modules/festive/festive.routes");
+const promptRoutes = require("./src/modules/prompts/prompt.routes");
+const resaleRoutes = require("./src/modules/resale/resale.routes");
 
 const app = express();
 
@@ -102,6 +104,8 @@ app.use("/api/items", itemsRoutes);
 app.use("/api/lifecycle", lifecycleRoutes);
 app.use("/api/prevention", preventionRoutes);
 app.use("/api/festive", festiveRoutes);
+app.use("/api/prompts", promptRoutes);
+app.use("/api/resale", resaleRoutes);
 
 // Error Handler
 app.use(errorHandler);

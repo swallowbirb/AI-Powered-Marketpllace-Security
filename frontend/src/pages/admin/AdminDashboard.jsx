@@ -17,6 +17,7 @@ import {
   moderateReview,
 } from '../../services/admin.service';
 import { getFestiveCalendar, setFestiveOverride } from '../../services/festive.service';
+import { listPrompts, savePrompt, resetPrompt } from '../../services/prompt.service';
 
 // ─── Shared Components ────────────────────────────────────────────────────────
 
@@ -949,6 +950,140 @@ const FestiveTab = () => {
         "Force ON" activates festive levers regardless of today's date — safe for demos.
         Only one event can be forced at a time. Real-date events activate automatically when the calendar matches.
       </p>
+// ─── Prompts Tab (AI Grader fine-tuning) ──────────────────────────────────────
+
+const PromptsTab = () => {
+  const [prompts, setPrompts] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [drafts, setDrafts] = useState({});      // key -> content
+  const [savingKey, setSavingKey] = useState(null);
+  const [savedKey, setSavedKey] = useState(null);
+
+  const keyOf = (p) => `${p.scope}:${p.key}`;
+
+  const fetchPrompts = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await listPrompts();
+      const list = res.data || [];
+      setPrompts(list);
+      setDrafts(Object.fromEntries(list.map((p) => [`${p.scope}:${p.key}`, p.content || ''])));
+    } catch (err) {
+      console.error('Failed to load prompts:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchPrompts(); }, [fetchPrompts]);
+
+  const handleSave = async (p) => {
+    const k = keyOf(p);
+    setSavingKey(k);
+    try {
+      await savePrompt({ scope: p.scope, key: p.key, content: drafts[k], label: p.label });
+      setSavedKey(k);
+      setTimeout(() => setSavedKey(null), 1800);
+      await fetchPrompts();
+    } catch (err) {
+      console.error('Failed to save prompt:', err);
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const handleReset = async (p) => {
+    const k = keyOf(p);
+    setSavingKey(k);
+    try {
+      const res = await resetPrompt({ scope: p.scope, key: p.key });
+      const content = res?.data?.content ?? '';
+      setDrafts((prev) => ({ ...prev, [k]: content }));
+      await fetchPrompts();
+    } catch (err) {
+      console.error('Failed to reset prompt:', err);
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="p-12 text-center text-zinc-500 flex flex-col items-center gap-3">
+        <RefreshCw className="w-6 h-6 animate-spin text-zinc-600" />
+        Loading prompts...
+      </div>
+    );
+  }
+
+  const base = prompts.filter((p) => p.scope === 'base');
+  const categories = prompts.filter((p) => p.scope === 'category');
+
+  const PromptCard = ({ p }) => {
+    const k = keyOf(p);
+    const dirty = (drafts[k] ?? '') !== (p.content ?? '');
+    return (
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-semibold text-zinc-100">{p.label || `${p.scope}:${p.key}`}</p>
+            <p className="text-xs text-zinc-500">
+              {p.scope === 'base' ? 'Applies to every grading call' : `Category bundle: ${p.key}`}
+              {p.version ? ` · v${p.version}` : ' · default (unsaved)'}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {savedKey === k && <span className="text-xs text-emerald-400">Saved</span>}
+            <button
+              onClick={() => handleReset(p)}
+              disabled={savingKey === k}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-40"
+            >
+              Reset to default
+            </button>
+            <button
+              onClick={() => handleSave(p)}
+              disabled={savingKey === k || !dirty}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-violet-500/20 text-violet-300 border border-violet-500/30 hover:bg-violet-500/30 disabled:opacity-40"
+            >
+              {savingKey === k ? 'Saving…' : dirty ? 'Save' : 'Saved'}
+            </button>
+          </div>
+        </div>
+        <textarea
+          value={drafts[k] ?? ''}
+          onChange={(e) => setDrafts((prev) => ({ ...prev, [k]: e.target.value }))}
+          rows={p.scope === 'base' ? 16 : 8}
+          spellCheck={false}
+          className="w-full bg-black/40 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 font-mono leading-relaxed outline-none focus:border-violet-500/40 resize-y"
+        />
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="bg-violet-500/5 border border-violet-500/20 rounded-2xl p-4">
+        <p className="text-sm font-semibold text-violet-300 mb-1">AI Grader Prompt Tuning</p>
+        <p className="text-xs text-zinc-400 leading-relaxed">
+          Prompts compose in order: <span className="text-zinc-300">Base → Category → Seller (per-product)</span>.
+          The base prompt forces image verification before any condition analysis. Category prompts
+          bundle similar categories (e.g. skincare, pharma and supplements share one "sealed
+          consumables → liquidate" rule). Sellers add per-product instructions from their dashboard.
+        </p>
+      </div>
+
+      <div>
+        <p className="text-xs uppercase tracking-wider text-zinc-500 font-medium mb-2">Base Prompt</p>
+        <div className="space-y-4">{base.map((p) => <PromptCard key={keyOf(p)} p={p} />)}</div>
+      </div>
+
+      <div>
+        <p className="text-xs uppercase tracking-wider text-zinc-500 font-medium mb-2">Category Prompts</p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {categories.map((p) => <PromptCard key={keyOf(p)} p={p} />)}
+        </div>
+      </div>
     </div>
   );
 };
@@ -960,6 +1095,7 @@ const TABS = [
   { id: 'sellers', label: 'Sellers', icon: Users },
   { id: 'reviews', label: 'Reviews', icon: Eye },
   { id: 'festive', label: 'Festive Mode', icon: Sparkles },
+  { id: 'prompts', label: 'AI Prompts', icon: Sparkles },
 ];
 
 const AdminDashboard = () => {

@@ -5,8 +5,8 @@ export const initiateFromOrder = async ({ orderId, description, askingPrice, cla
   return response.data;
 };
 
-export const submitSecondhandEvidence = async (itemId, photos, fieldImages) => {
-  const response = await api.post(`/secondhand/${itemId}/evidence`, { photos, fieldImages });
+export const submitSecondhandEvidence = async (itemId, photos, fieldImages, additionalNotes) => {
+  const response = await api.post(`/secondhand/${itemId}/evidence`, { photos, fieldImages, additionalNotes });
   return response.data;
 };
 

@@ -107,15 +107,13 @@ def test_hard_fraud_classification():
 
 
 def test_soft_and_clean_fraud_classification():
-    # No phash, has exif, no web => CLEAN.
-    cls, sig = fraud_preflight.classify(False, True, False)
+    # No phash, has exif => CLEAN.
+    cls, sig = fraud_preflight.classify(False, True)
     assert cls == fraud_preflight.CLASSIFICATION_CLEAN
     # No phash, missing exif => SOFT.
-    cls, sig = fraud_preflight.classify(False, False, False)
+    cls, sig = fraud_preflight.classify(False, False)
     assert cls == fraud_preflight.CLASSIFICATION_SOFT
-    # No phash, has exif, web match => SOFT.
-    cls, sig = fraud_preflight.classify(False, True, True)
-    assert cls == fraud_preflight.CLASSIFICATION_SOFT
+    assert sig == "missing_exif"
 
 
 # --------------------------------------------------------------------------- #
@@ -230,25 +228,61 @@ def test_json_extraction_errors():
 # Minimal fallback runner (when pytest is unavailable)
 # --------------------------------------------------------------------------- #
 # --------------------------------------------------------------------------- #
-# v3.44 — field→image mapping surfaces in the Analysis_Summary (improvement #3)
+# v2.34 — Evidence Inspector normalization + fragment-based Pass-2 summary
 # --------------------------------------------------------------------------- #
-def test_run_analysis_surfaces_field_images():
-    import asyncio
-    from app.services import analysis_orchestrator as ao
+def test_inspector_normalize_strips_grading_fields_and_enforces_invariants():
+    from app.services.evidence_inspector import _normalize
 
-    # No photos / listing images => analyses short-circuit to unavailable, but the
-    # field_images mapping must still be threaded into the summary for Pass 2.
-    field_images = {"sole_photo": ["s3://a"], "upper_photo": ["s3://b", "s3://c"]}
-    summary = asyncio.run(ao.run_analysis(
-        photos=["s3://a", "s3://b", "s3://c"],
-        listing_images=[],
-        fraud_outcome={"classification": "CLEAN"},
-        category="footwear",
-        reason="too tight",
-        field_images=field_images,
-    ))
-    assert summary["field_images"] == field_images
+    # Even if a model hallucinates a grade/severity, the inspector shape never carries it.
+    raw = {
+        "accepted": True, "reupload_reason": "ignored when accepted",
+        "clarity": "BOGUS", "subject_match": "yes", "identity_match": "maybe",
+        "observations": ["scuff", None, 3], "ocr_text": "  ",
+        "condition_signals": ["light wear"], "grade": "A", "severity": "major",
+    }
+    r = _normalize(raw)
+    assert "grade" not in r and "severity" not in r          # inspector never grades
+    assert r["clarity"] == "clear"                            # invalid enum -> clear
+    assert r["identity_match"] == "unknown"                   # invalid enum -> unknown
+    assert r["reupload_reason"] is None                       # null when accepted
+    assert r["observations"] == ["scuff", "3"]                # cleaned list
+    assert r["ocr_text"] is None                              # blank -> None
+    assert r["inspector_status"] == "ok"
+
+
+def test_inspector_rejected_always_has_reason():
+    from app.services.evidence_inspector import _normalize
+    r = _normalize({"accepted": False, "reupload_reason": None})
+    assert r["accepted"] is False
+    assert isinstance(r["reupload_reason"], str) and r["reupload_reason"]
+
+
+def test_build_summary_from_fragments_groups_by_field():
+    from app.services.evidence_inspector import build_analysis_summary
+
+    fragments = [
+        {"field_id": "sole_photo", "field_label": "Sole", "image_url": "s3://a",
+         "clarity": "clear", "identity_match": "yes", "observations": ["tread worn"],
+         "condition_signals": ["heavy wear"], "ocr_text": None, "inspector_status": "ok"},
+        {"field_id": "upper_photo", "field_label": "Upper", "image_url": "s3://b",
+         "clarity": "clear", "identity_match": "no", "observations": [],
+         "condition_signals": [], "ocr_text": "SN123", "inspector_status": "ok"},
+    ]
+    summary = build_analysis_summary(fragments, fraud={"classification": "CLEAN"},
+                                     category="footwear", reason="too worn")
+    assert summary["source"] == "evidence_fragments"
     assert summary["evidence_fields"] == ["sole_photo", "upper_photo"]
+    assert summary["field_images"] == {"sole_photo": ["s3://a"], "upper_photo": ["s3://b"]}
+    assert "SN123" in summary["ocr_text"]
+    # An identity "no" must surface as a warning so Pass 2 withholds a high grade.
+    assert "identity_mismatch_reported" in summary["warnings"]
+
+
+def test_build_summary_empty_fragments_warns():
+    from app.services.evidence_inspector import build_analysis_summary
+    summary = build_analysis_summary([], category="apparel", reason="x")
+    assert "no_evidence_fragments" in summary["warnings"]
+    assert summary["photo_count"] == 0
 
 
 if __name__ == "__main__":

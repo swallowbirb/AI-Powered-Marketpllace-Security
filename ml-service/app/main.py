@@ -21,3 +21,4 @@ app.include_router(health.router)
 app.include_router(grading.router, prefix="/grade", tags=["grading"])
 app.include_router(vision.router, prefix="/vision", tags=["vision"])
 app.include_router(prediction.router, prefix="/predict", tags=["prediction"])
+

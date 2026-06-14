@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { getProductById, updateProduct } from '../services/product.service';
 import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import ProductImageAngleEditor from '../components/shared/ProductImageAngleEditor';
 
 const EditProductPage = () => {
   const { id } = useParams();
@@ -18,6 +19,9 @@ const EditProductPage = () => {
     category: '',
     brandName: '',
     images: [''],
+    imageAngles: {},
+    imageHints: [],
+    gradingInstructions: '',
   });
 
   useEffect(() => {
@@ -33,6 +37,9 @@ const EditProductPage = () => {
             category: product.category || '',
             brandName: product.brandName || '',
             images: product.images && product.images.length > 0 ? product.images : [''],
+            imageAngles: product.imageAngles && typeof product.imageAngles === 'object' ? product.imageAngles : {},
+            imageHints: Array.isArray(product.imageHints) ? product.imageHints : [],
+            gradingInstructions: product.gradingInstructions || '',
           });
         } else {
           setError('Failed to fetch product details.');
@@ -54,22 +61,6 @@ const EditProductPage = () => {
       ...prev,
       [name]: value
     }));
-  };
-
-  const handleImageChange = (idx, val) => {
-    setFormData(prev => {
-      const images = [...prev.images];
-      images[idx] = val;
-      return { ...prev, images };
-    });
-  };
-
-  const addImageField = () => {
-    setFormData(prev => ({ ...prev, images: [...prev.images, ''] }));
-  };
-
-  const removeImageField = (idx) => {
-    setFormData(prev => ({ ...prev, images: prev.images.filter((_, i) => i !== idx) }));
   };
 
   const handleSubmit = async (e) => {
@@ -228,40 +219,14 @@ const EditProductPage = () => {
             </p>
           </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-zinc-300">
-                Product Images <span className="text-zinc-500">(optional URLs)</span>
-              </label>
-              <button
-                type="button"
-                onClick={addImageField}
-                className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
-              >
-                + Add another
-              </button>
-            </div>
-            {formData.images.map((url, idx) => (
-              <div key={idx} className="flex gap-2 mb-2">
-                <input
-                  type="url"
-                  value={url}
-                  onChange={(e) => handleImageChange(idx, e.target.value)}
-                  placeholder="https://example.com/image.jpg"
-                  className="flex-1 bg-black/50 border border-zinc-800 rounded-xl px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all text-sm"
-                />
-                {formData.images.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeImageField(idx)}
-                    className="text-zinc-500 hover:text-red-400 transition-colors px-2"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
+          <ProductImageAngleEditor
+            images={formData.images}
+            angles={formData.imageAngles}
+            hints={formData.imageHints}
+            setImages={(images) => setFormData((prev) => ({ ...prev, images }))}
+            setAngles={(imageAngles) => setFormData((prev) => ({ ...prev, imageAngles }))}
+            setHints={(imageHints) => setFormData((prev) => ({ ...prev, imageHints }))}
+          />
 
           <div>
             <label htmlFor="description" className="block text-sm font-medium text-zinc-300 mb-2">
@@ -276,6 +241,25 @@ const EditProductPage = () => {
               placeholder="Describe your product in detail..."
               className="w-full bg-black/50 border border-zinc-800 rounded-xl px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all resize-none"
             />
+          </div>
+
+          <div>
+            <label htmlFor="gradingInstructions" className="block text-sm font-medium text-zinc-300 mb-2">
+              AI Grading Instructions <span className="text-zinc-500">(optional)</span>
+            </label>
+            <textarea
+              id="gradingInstructions"
+              name="gradingInstructions"
+              rows={4}
+              value={formData.gradingInstructions}
+              onChange={handleChange}
+              placeholder="Product-specific guidance for the AI grader when a buyer returns or resells this item. e.g. 'Check the hinge for cracks — this model is prone to them. The charging cable must be present for Grade A. Counterfeits have a misaligned logo on the back.'"
+              className="w-full bg-black/50 border border-zinc-800 rounded-xl px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all resize-y"
+            />
+            <p className="text-xs text-zinc-600 mt-1">
+              Advisory only — refines, never overrides, the platform's grading rubric. Layered after
+              the base and category prompts when this product is graded.
+            </p>
           </div>
 
           <div className="pt-4">

@@ -102,10 +102,15 @@ def _normalize_schema(schema: dict, category: Optional[str]) -> dict:
         photo_fields = photo_fields[:MAX_PHOTO_FIELDS]
     kept = photo_fields + other_fields
 
-    # Backfill a sane expected_subject for any photo field the model left bare.
+    # Backfill a sane expected_subject + validation_criteria for any photo field the
+    # model left bare, so per-upload inspection always has an acceptance test.
     for f in kept:
-        if f.get("type") == "photo" and not (f.get("expected_subject") or "").strip():
-            f["expected_subject"] = f.get("label") or "the item"
+        if f.get("type") == "photo":
+            if not (f.get("expected_subject") or "").strip():
+                f["expected_subject"] = f.get("label") or "the item"
+            if not (f.get("validation_criteria") or "").strip():
+                f["validation_criteria"] = (
+                    f"Must clearly show {f['expected_subject']}.")
 
     schema["fields"] = kept
     schema.setdefault("category", category or "generic")
@@ -133,7 +138,10 @@ async def generate_form(
     initial_photos: Optional[List[str]] = None,
     listing_image_urls: Optional[List[str]] = None,
     listing_data: Optional[dict] = None,
+    image_hints: Optional[List[dict]] = None,
     seller_prompt: Optional[str] = None,
+    base_prompt: Optional[str] = None,
+    category_prompt: Optional[str] = None,
     trace=None,
 ) -> dict:
     """
@@ -159,12 +167,39 @@ async def generate_form(
 
     # Compose the Pass-1 prompt.
     template = prompt_loader.load_template("pass1_form_generation.txt")
+
+    # Build the image_hints block so the LLM generates one dedicated field per hint.
+    hints_text = ""
+    if image_hints:
+        hints_lines = []
+        for i, h in enumerate(image_hints[:8], 1):  # cap at 8 to not overwhelm
+            url = (h.get("url") or "").strip()
+            label = (h.get("label") or "").strip()
+            hint = (h.get("hint") or "").strip()
+            if label or hint:
+                heading = label or "Custom check"
+                hints_lines.append(
+                    f"  {i}. Image: {url or '(attached)'}\n"
+                    f"     Field heading: {heading}\n"
+                    f"     What to verify: {hint or heading}")
+        if hints_lines:
+            hints_text = (
+                "\n\nSELLER CUSTOM FIELD INSTRUCTIONS:\n"
+                "The seller has flagged specific catalog images with instructions. For each entry below,\n"
+                "you MUST generate a dedicated photo field in the form targeting that image/area.\n"
+                "Use the 'Field heading' as the field label, and the 'What to verify' text as the\n"
+                "guidance, expected_subject, and validation_criteria for that field.\n"
+                + "\n".join(hints_lines)
+            )
+
     body = template.format(
         reason=reason,
         category=category or "unknown",
         listing_data=json.dumps(listing_data or {}, ensure_ascii=False),
+        image_hints_section=hints_text,
     )
-    prompt = prompt_loader.compose(category, body, seller_prompt=seller_prompt)
+    prompt = prompt_loader.compose(category, body, seller_prompt=seller_prompt,
+                                   base_override=base_prompt, category_override=category_prompt)
 
     # Attach images (multimodal) — best-effort. Catalog reference photos first (they
     # show what the product looks like new, the strongest signal for tailoring the

@@ -27,6 +27,8 @@ import BrandStorePage from './pages/BrandStorePage';
 import SellSecondhandPage from './pages/SellSecondhandPage';
 import ItemEvidencePage from './pages/ItemEvidencePage';
 import ItemStatusPage from './pages/ItemStatusPage';
+import ResaleMarketplacePage from './pages/ResaleMarketplacePage';
+import ResaleListingDetailPage from './pages/ResaleListingDetailPage';
 
 // ─── Role Guards ────────────────────────────────────────────────────────────
 
@@ -137,6 +139,8 @@ function App() {
               {/* Public marketplace routes (with Navbar + Footer) */}
               <Route path="/" element={<MarketplaceLayout><HomePage /></MarketplaceLayout>} />
               <Route path="/search" element={<MarketplaceLayout><SearchResultsPage /></MarketplaceLayout>} />
+              <Route path="/resale" element={<MarketplaceLayout><ResaleMarketplacePage /></MarketplaceLayout>} />
+              <Route path="/resale/:id" element={<MarketplaceLayout><ResaleListingDetailPage /></MarketplaceLayout>} />
               <Route path="/products/:id" element={<MarketplaceLayout><ProductDetailPage /></MarketplaceLayout>} />
               <Route path="/p/:entryId" element={<MarketplaceLayout><CatalogEntryDetailPage /></MarketplaceLayout>} />
               <Route path="/seller/:id/store" element={<MarketplaceLayout><StorePage /></MarketplaceLayout>} />

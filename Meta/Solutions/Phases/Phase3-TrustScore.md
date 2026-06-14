@@ -499,3 +499,7 @@ When ALL of the following are true, Phase 3 is complete:
   ROI, higher cross-collection complexity).
 - **Frontend nav wiring:** Defer mounting `<TrustBadge>` into shared layout until a
   coordinated integration pass to avoid conflicts with P1's nav changes.
+
+
+
+  -->TODO-> think of logic

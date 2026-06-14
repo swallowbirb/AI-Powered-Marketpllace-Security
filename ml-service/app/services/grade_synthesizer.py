@@ -26,6 +26,9 @@ async def synthesize_grade(
     analysis_summary: Dict[str, Any],
     category: Optional[str] = None,
     pass1_model: Optional[str] = None,
+    seller_prompt: Optional[str] = None,
+    base_prompt: Optional[str] = None,
+    category_prompt: Optional[str] = None,
     trace=None,
 ) -> Dict[str, Any]:
     """
@@ -34,7 +37,8 @@ async def synthesize_grade(
     """
     template = prompt_loader.load_template("pass2_grade_synthesis.txt")
     body = template.format(analysis_summary=json.dumps(analysis_summary, ensure_ascii=False, indent=2))
-    prompt = prompt_loader.compose(category, body)
+    prompt = prompt_loader.compose(category, body, seller_prompt=seller_prompt,
+                                   base_override=base_prompt, category_override=category_prompt)
 
     if trace is not None:
         trace.info("pass2", "PASS2_PROMPT",

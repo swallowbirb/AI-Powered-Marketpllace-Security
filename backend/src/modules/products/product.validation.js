@@ -49,8 +49,46 @@ const validateCreateProduct = (req, res, next) => {
 };
 
 const validateUpdateProduct = (req, res, next) => {
-  const { title, description, price, category, images, brandName, condition } = req.body;
+  const { title, description, price, category, images, brandName, condition,
+    gradingInstructions, imageAngles, imageHints } = req.body;
   const errors = [];
+
+  // v2.34 — per-product AI grading instructions (seller prompt overlay).
+  if (gradingInstructions !== undefined) {
+    if (typeof gradingInstructions !== 'string') {
+      errors.push('gradingInstructions must be a string');
+    } else if (gradingInstructions.length > 4000) {
+      errors.push('gradingInstructions must be 4000 characters or fewer');
+    }
+  }
+
+  // v2.34 — seller-tagged angle reference images: { front, side_left, side_right, rear }.
+  if (imageAngles !== undefined &&
+      (typeof imageAngles !== 'object' || imageAngles === null || Array.isArray(imageAngles))) {
+    errors.push('imageAngles must be an object of { angle: imageUrl }');
+  }
+
+  // v2.34 — per-image hints for Pass-1 form generation.
+  if (imageHints !== undefined) {
+    if (!Array.isArray(imageHints)) {
+      errors.push('imageHints must be an array of { url, hint } objects');
+    } else {
+      for (const h of imageHints) {
+        if (typeof h !== 'object' || typeof h.url !== 'string' || typeof h.hint !== 'string') {
+          errors.push('Each imageHints entry must have a string url and a string hint');
+          break;
+        }
+        if (h.label !== undefined && typeof h.label !== 'string') {
+          errors.push('Each imageHints label must be a string');
+          break;
+        }
+        if (h.hint.length > 400) {
+          errors.push('Each imageHints hint must be 400 characters or fewer');
+          break;
+        }
+      }
+    }
+  }
 
   if (title !== undefined && (typeof title !== 'string' || title.trim() === '')) {
     errors.push('Title must be a non-empty string');

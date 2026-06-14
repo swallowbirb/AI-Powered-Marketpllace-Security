@@ -2,10 +2,10 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  X, CheckCircle2, Loader2, ImagePlus, ArrowRight, AlertTriangle, Sparkles,
+  X, CheckCircle2, Loader2, ImagePlus, ArrowRight, AlertTriangle, Sparkles, Send,
 } from 'lucide-react';
 import {
-  uploadToS3, getItemStatus, getEvidenceForm, validateEvidencePhoto,
+  uploadToS3, getItemStatus, getEvidenceForm, verifyEvidenceField,
 } from '../services/item.service';
 import { submitReturnEvidence } from '../services/return.service';
 import { submitSecondhandEvidence } from '../services/secondhand.service';
@@ -15,13 +15,18 @@ import TrustTierBadge from '../components/shared/TrustTierBadge';
 const FORM_POLL_INTERVAL = 1500;
 
 /**
- * ItemEvidencePage (v3.44)
+ * ItemEvidencePage (v2.35)
  *
- * Renders the DYNAMIC, product- & claim-specific Pass-1 form. While Pass 1 runs
- * the user sees the generic fields instantly; the AI-tailored schema swaps in when
- * ready (no spinner). Each photo field uploads to S3 and is validated against its
- * `expected_subject` (right part? in focus?). On submit we send a field→image
- * mapping so Pass 2 can grade by named field.
+ * Per-field batched evidence flow:
+ *   1. Photos for a field are uploaded to S3 only — NO LLM is called per upload.
+ *   2. The user clicks "Submit Field" → ONE multimodal LLM call judges the
+ *      whole photo SET for that field (right item, required views present, etc).
+ *   3. The page-level "Submit Evidence" button triggers grading; any required
+ *      field that wasn't submitted manually is verified inline first.
+ *
+ * Field state machine:
+ *   idle → staged (≥1 photo) → verifying → verified | rejected
+ *   editing photos in a verified field downgrades it back to 'staged'.
  */
 export default function ItemEvidencePage() {
   const { itemId } = useParams();
@@ -35,8 +40,9 @@ export default function ItemEvidencePage() {
   const [readiness, setReadiness] = useState('pending'); // pending | ready | fallback
   const [source, setSource] = useState(null);
 
-  // Per-field state: { [fieldId]: { photos: [{url, status, issues}], text } }
+  // Per-field state — see file header for the shape.
   const [fieldState, setFieldState] = useState({});
+  const [additionalNotes, setAdditionalNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const fileInputs = useRef({});
@@ -66,17 +72,40 @@ export default function ItemEvidencePage() {
     };
     poll();
     const interval = setInterval(() => {
-      // Stop polling once the AI form (or fallback) has arrived.
       if (readiness === 'ready' || readiness === 'fallback') return;
       poll();
     }, FORM_POLL_INTERVAL);
     return () => { active = false; clearInterval(interval); };
   }, [itemId, readiness]);
 
-  const photoFields = (schema?.fields || []).filter((f) => f.type === 'photo');
-  const textFields = (schema?.fields || []).filter((f) => f.type !== 'photo');
+  // Temporarily hide serial-number / model-label fields (not required for now).
+  const isHiddenField = (f) => {
+    const s = `${f.id || ''} ${f.label || ''} ${f.expected_subject || ''}`.toLowerCase();
+    return /serial|imei/.test(s)
+      || /(brand|model)[^a-z]{0,12}label/.test(s)
+      || /label[^a-z]{0,12}(serial|brand|model)/.test(s)
+      || f.id === 'label_photo';
+  };
 
-  // --- Upload + validate a photo for a specific field ---
+  const visibleFields = (schema?.fields || []).filter((f) => !isHiddenField(f));
+  const photoFields = visibleFields.filter((f) => f.type === 'photo');
+  const textFields = visibleFields.filter((f) => f.type !== 'photo');
+
+  // ----------- per-field helpers ---------------------------------------------
+  // Editing a verified field reverts its badge: the user must Submit Field again.
+  const revertVerifiedOnEdit = (state, fieldId) => {
+    const f = state[fieldId];
+    if (!f) return state;
+    if (f.fieldStatus === 'verified' || f.fieldStatus === 'rejected') {
+      return {
+        ...state,
+        [fieldId]: { ...f, fieldStatus: 'staged', reuploadReason: null, missingViews: [], perPhoto: [] },
+      };
+    }
+    return state;
+  };
+
+  // --- Upload (S3 only) — NO LLM call here in v2.35 ---
   const handleFieldUpload = useCallback(async (field, files) => {
     const valid = Array.from(files).filter((f) => f.type.startsWith('image/'));
     if (!valid.length) return;
@@ -84,35 +113,25 @@ export default function ItemEvidencePage() {
 
     for (const file of valid) {
       const tmpUrl = URL.createObjectURL(file);
-      // Optimistic uploading entry.
-      setFieldState((prev) => ({
-        ...prev,
-        [field.id]: {
-          ...(prev[field.id] || {}),
-          photos: [...((prev[field.id] || {}).photos || []), { tmpUrl, status: 'uploading', issues: [] }],
-        },
-      }));
+      // Optimistic uploading entry; verified→staged on edit.
+      setFieldState((prev) => {
+        const next = revertVerifiedOnEdit(prev, field.id);
+        const f = next[field.id] || {};
+        return {
+          ...next,
+          [field.id]: {
+            ...f,
+            photos: [...(f.photos || []), { tmpUrl, status: 'uploading' }],
+            fieldStatus: f.fieldStatus === 'verified' ? 'staged' : (f.fieldStatus || 'staged'),
+          },
+        };
+      });
 
       try {
         const url = await uploadToS3(file, itemId);
-        // Run inline validation against the field's expected subject.
-        let issues = [];
-        setFieldState((prev) => updatePhoto(prev, field.id, tmpUrl, { url, status: 'validating' }));
-        try {
-          const res = await validateEvidencePhoto({
-            photoUrl: url, itemId, expectedSubject: field.expected_subject,
-          });
-          issues = res?.data?.issues || [];
-        } catch {
-          /* validation outage — accept the photo */
-        }
-        setFieldState((prev) => updatePhoto(prev, field.id, tmpUrl, {
-          url, status: issues.length ? 'warning' : 'ok', issues,
-        }));
-      } catch (err) {
-        setFieldState((prev) => updatePhoto(prev, field.id, tmpUrl, {
-          status: 'error', issues: ['upload_failed'],
-        }));
+        setFieldState((prev) => updatePhoto(prev, field.id, tmpUrl, { url, status: 'ready' }));
+      } catch {
+        setFieldState((prev) => updatePhoto(prev, field.id, tmpUrl, { status: 'error' }));
         setError('A photo failed to upload. Please try again.');
       }
     }
@@ -120,10 +139,20 @@ export default function ItemEvidencePage() {
 
   const removePhoto = (fieldId, tmpUrl) => {
     setFieldState((prev) => {
-      const f = prev[fieldId] || {};
+      const reverted = revertVerifiedOnEdit(prev, fieldId);
+      const f = reverted[fieldId] || {};
+      const remaining = (f.photos || []).filter((p) => p.tmpUrl !== tmpUrl);
       return {
-        ...prev,
-        [fieldId]: { ...f, photos: (f.photos || []).filter((p) => p.tmpUrl !== tmpUrl) },
+        ...reverted,
+        [fieldId]: {
+          ...f,
+          photos: remaining,
+          // No photos left ⇒ idle (and clear any old verification result).
+          fieldStatus: remaining.length === 0 ? 'idle' : (f.fieldStatus || 'staged'),
+          reuploadReason: remaining.length === 0 ? null : f.reuploadReason,
+          perPhoto: remaining.length === 0 ? [] : (f.perPhoto || []),
+          missingViews: remaining.length === 0 ? [] : (f.missingViews || []),
+        },
       };
     });
   };
@@ -132,7 +161,58 @@ export default function ItemEvidencePage() {
     setFieldState((prev) => ({ ...prev, [fieldId]: { ...(prev[fieldId] || {}), text: value } }));
   };
 
-  // --- Required-field gating (client-side mirror of the backend gate) ---
+  // --- Per-field "Submit Field" — ONE LLM call over the whole photo set ---
+  const submitFieldForVerification = useCallback(async (field) => {
+    const f = fieldState[field.id] || {};
+    const photoUrls = (f.photos || []).filter((p) => p.url && p.status === 'ready').map((p) => p.url);
+    if (photoUrls.length === 0) return;
+
+    setFieldState((prev) => ({
+      ...prev,
+      [field.id]: { ...(prev[field.id] || {}), fieldStatus: 'verifying' },
+    }));
+
+    try {
+      const res = await verifyEvidenceField({
+        itemId,
+        fieldId: field.id,
+        fieldLabel: field.label,
+        expectedSubject: field.expected_subject,
+        validationCriteria: field.validation_criteria,
+        photoUrls,
+      });
+      const d = res?.data || {};
+      const accepted = d.accepted !== false;
+      setFieldState((prev) => ({
+        ...prev,
+        [field.id]: {
+          ...(prev[field.id] || {}),
+          fieldStatus: accepted ? 'verified' : 'rejected',
+          reuploadReason: accepted ? null : (d.reupload_reason || 'Please review the photos for this field.'),
+          perPhoto: Array.isArray(d.per_photo) ? d.per_photo : [],
+          missingViews: Array.isArray(d.missing_views) ? d.missing_views : [],
+        },
+      }));
+      return accepted;
+    } catch {
+      // ML/network failure → fail-open: mark verified-with-warning so the user
+      // is never hard-blocked. The synthesizer at submit can still flag the item.
+      setFieldState((prev) => ({
+        ...prev,
+        [field.id]: {
+          ...(prev[field.id] || {}),
+          fieldStatus: 'verified',
+          reuploadReason: null,
+          perPhoto: [],
+          missingViews: [],
+        },
+      }));
+      return true;
+    }
+  }, [fieldState, itemId]);
+
+  // --- Required-field gating (mirrors the backend gate) ---
+  // Required = at least one photo present. Verification status is enforced at submit.
   const missingRequired = photoFields
     .filter((f) => f.required)
     .filter((f) => !((fieldState[f.id]?.photos || []).some((p) => p.url)))
@@ -141,12 +221,15 @@ export default function ItemEvidencePage() {
   const buildFieldImages = () => {
     const map = {};
     for (const f of photoFields) {
-      const urls = (fieldState[f.id]?.photos || []).filter((p) => p.url).map((p) => p.url);
+      const urls = (fieldState[f.id]?.photos || [])
+        .filter((p) => p.url && p.status === 'ready')
+        .map((p) => p.url);
       if (urls.length) map[f.id] = urls;
     }
     return map;
   };
 
+  // --- Page-level Submit — verifies any required field that wasn't manually submitted ---
   const handleSubmit = async () => {
     if (missingRequired.length) {
       setError(`Please add: ${missingRequired.join(', ')}`);
@@ -155,6 +238,21 @@ export default function ItemEvidencePage() {
     setError(null);
     setSubmitting(true);
     try {
+      // Inline-verify any required fields that have photos but aren't 'verified' yet.
+      const needsVerify = photoFields.filter((f) => {
+        const s = fieldState[f.id];
+        const hasPhotos = (s?.photos || []).some((p) => p.url && p.status === 'ready');
+        return hasPhotos && s?.fieldStatus !== 'verified';
+      });
+      for (const field of needsVerify) {
+        const accepted = await submitFieldForVerification(field);
+        if (accepted === false) {
+          setError(`"${field.label || field.id}" needs another photo. See the field for details.`);
+          setSubmitting(false);
+          return;
+        }
+      }
+
       const fieldImages = buildFieldImages();
       const allUrls = Object.values(fieldImages).flat();
       if (allUrls.length === 0) {
@@ -163,7 +261,7 @@ export default function ItemEvidencePage() {
         return;
       }
       const submitFn = intakePath === 'sell-used' ? submitSecondhandEvidence : submitReturnEvidence;
-      await submitFn(itemId, allUrls, fieldImages);
+      await submitFn(itemId, allUrls, fieldImages, additionalNotes.trim() || undefined);
       navigate(`/items/${itemId}/status`, { state: { intakePath, productTitle }, replace: true });
     } catch (err) {
       setError(err.response?.data?.message || 'Submission failed. Please try again.');
@@ -191,12 +289,11 @@ export default function ItemEvidencePage() {
             </h1>
             <p className="text-sm text-gray-500 mt-1">
               {isAiForm
-                ? 'We tailored this checklist to your item and your reason. Add each photo below.'
+                ? 'We tailored this checklist to your item and your reason. Add the photos for each field, then click Submit Field.'
                 : 'Add clear, well-lit photos showing the item\u2019s current condition.'}
             </p>
             <div className="flex items-center gap-2 mt-3">
               {trustTier && <TrustTierBadge tier={trustTier} />}
-              {/* Form readiness indicator (progressive form) */}
               {readiness === 'pending' && (
                 <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-600">
                   <Loader2 className="w-3 h-3 animate-spin" /> Tailoring your form…
@@ -218,20 +315,52 @@ export default function ItemEvidencePage() {
           {/* Photo fields */}
           <div className="space-y-4">
             {photoFields.map((field) => {
-              const photos = fieldState[field.id]?.photos || [];
+              const f = fieldState[field.id] || {};
+              const photos = f.photos || [];
+              const fieldStatus = f.fieldStatus || (photos.length > 0 ? 'staged' : 'idle');
+              const hasReadyPhoto = photos.some((p) => p.url && p.status === 'ready');
+              const verifying = fieldStatus === 'verifying';
+              const verified = fieldStatus === 'verified';
+              const rejected = fieldStatus === 'rejected';
+
+              // Map per-photo notes from the LLM back onto the photo cards.
+              const noteByUrl = new Map();
+              for (const n of f.perPhoto || []) {
+                if (n && n.image_url) noteByUrl.set(n.image_url, n);
+              }
+
               return (
                 <motion.div
                   key={field.id}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="border border-gray-200 rounded-2xl p-4 bg-white"
+                  className={`border rounded-2xl p-4 bg-white ${
+                    verified ? 'border-emerald-300' : rejected ? 'border-red-300' : 'border-gray-200'
+                  }`}
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-bold text-gray-800 text-sm">
-                        {field.label}
-                        {field.required && <span className="text-red-500 ml-1">*</span>}
-                      </p>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-bold text-gray-800 text-sm">
+                          {field.label}
+                          {field.required && <span className="text-red-500 ml-1">*</span>}
+                        </p>
+                        {verified && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3" /> Verified
+                          </span>
+                        )}
+                        {rejected && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200">
+                            <AlertTriangle className="w-3 h-3" /> Re-upload
+                          </span>
+                        )}
+                        {fieldStatus === 'staged' && hasReadyPhoto && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                            Awaiting submission
+                          </span>
+                        )}
+                      </div>
                       {field.guidance && <p className="text-xs text-gray-500 mt-0.5">{field.guidance}</p>}
                       {field.expected_subject && (
                         <p className="text-[11px] text-gray-400 mt-0.5 italic">Should show: {field.expected_subject}</p>
@@ -239,7 +368,8 @@ export default function ItemEvidencePage() {
                     </div>
                     <button
                       onClick={() => fileInputs.current[field.id]?.click()}
-                      className="flex-shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-[#FF9900] hover:text-[#FFB347] px-3 py-1.5 rounded-lg border border-orange-200 bg-orange-50"
+                      disabled={verifying}
+                      className="flex-shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-[#FF9900] hover:text-[#FFB347] disabled:opacity-50 px-3 py-1.5 rounded-lg border border-orange-200 bg-orange-50"
                     >
                       <ImagePlus className="w-4 h-4" /> Add
                     </button>
@@ -252,27 +382,97 @@ export default function ItemEvidencePage() {
 
                   {photos.length > 0 && (
                     <div className="mt-3 grid grid-cols-3 gap-2">
-                      {photos.map((p) => (
-                        <div key={p.tmpUrl} className="relative rounded-xl overflow-hidden aspect-square group border border-gray-200">
-                          <img src={p.url || p.tmpUrl} alt="" className="w-full h-full object-cover" />
-                          {/* status overlay */}
-                          <div className="absolute inset-x-0 bottom-0 px-1.5 py-1 text-[9px] font-semibold flex items-center gap-1">
-                            {p.status === 'uploading' && <span className="text-white bg-black/60 rounded px-1 inline-flex items-center gap-1"><Loader2 className="w-2.5 h-2.5 animate-spin" /> Uploading</span>}
-                            {p.status === 'validating' && <span className="text-white bg-black/60 rounded px-1 inline-flex items-center gap-1"><Loader2 className="w-2.5 h-2.5 animate-spin" /> Checking</span>}
-                            {p.status === 'ok' && <span className="text-white bg-emerald-500/80 rounded px-1 inline-flex items-center gap-1"><CheckCircle2 className="w-2.5 h-2.5" /> Looks good</span>}
-                            {p.status === 'warning' && <span className="text-white bg-amber-500/90 rounded px-1 inline-flex items-center gap-1"><AlertTriangle className="w-2.5 h-2.5" /> {humanizeIssues(p.issues)}</span>}
-                            {p.status === 'error' && <span className="text-white bg-red-500/90 rounded px-1">Upload failed</span>}
-                          </div>
-                          <button
-                            onClick={() => removePhoto(field.id, p.tmpUrl)}
-                            className="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 hover:bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
+                      {photos.map((p) => {
+                        const note = p.url ? noteByUrl.get(p.url) : null;
+                        const flagged = note && note.usable === false;
+                        return (
+                          <div
+                            key={p.tmpUrl}
+                            className={`relative rounded-xl overflow-hidden aspect-square group border ${
+                              flagged ? 'border-red-300' : 'border-gray-200'
+                            }`}
                           >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))}
+                            <img src={p.tmpUrl || p.url} alt="" className="w-full h-full object-cover" />
+                            <div className="absolute inset-x-0 bottom-0 px-1.5 py-1 text-[9px] font-semibold flex items-center gap-1">
+                              {p.status === 'uploading' && (
+                                <span className="text-white bg-black/60 rounded px-1 inline-flex items-center gap-1">
+                                  <Loader2 className="w-2.5 h-2.5 animate-spin" /> Uploading
+                                </span>
+                              )}
+                              {p.status === 'error' && (
+                                <span className="text-white bg-red-500/90 rounded px-1">Upload failed</span>
+                              )}
+                              {p.status === 'ready' && note?.role && !flagged && (
+                                <span className="text-white bg-black/55 rounded px-1 truncate">{note.role}</span>
+                              )}
+                              {flagged && (
+                                <span className="text-white bg-red-500/90 rounded px-1 inline-flex items-center gap-1">
+                                  <AlertTriangle className="w-2.5 h-2.5" /> {note?.note || 'Replace this'}
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => removePhoto(field.id, p.tmpUrl)}
+                              disabled={verifying}
+                              className="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 hover:bg-red-500 disabled:opacity-50 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
+
+                  {/* Field-level reupload guidance from the Inspector */}
+                  {rejected && f.reuploadReason && (
+                    <div className="mt-3 flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-lg">
+                      <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p>{f.reuploadReason}</p>
+                        {Array.isArray(f.missingViews) && f.missingViews.length > 0 && (
+                          <p className="mt-1 text-[11px] text-red-600">
+                            Still needed: {f.missingViews.join(', ')}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Per-field Submit Field button */}
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <p className="text-[11px] text-gray-500">
+                      {verified
+                        ? 'Looks good. Edit photos to re-submit.'
+                        : rejected
+                          ? 'Add or replace photos and submit again.'
+                          : hasReadyPhoto
+                            ? 'When this field is complete, submit it for AI verification.'
+                            : 'Add at least one photo to submit this field.'}
+                    </p>
+                    <motion.button
+                      whileTap={{ scale: 0.97 }}
+                      onClick={() => submitFieldForVerification(field)}
+                      disabled={!hasReadyPhoto || verifying || verified}
+                      className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                        verified
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : rejected
+                            ? 'bg-red-500 hover:bg-red-600 text-white'
+                            : 'bg-gray-900 hover:bg-black text-white'
+                      }`}
+                    >
+                      {verifying ? (
+                        <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Checking…</>
+                      ) : verified ? (
+                        <><CheckCircle2 className="w-3.5 h-3.5" /> Verified</>
+                      ) : rejected ? (
+                        <><Send className="w-3.5 h-3.5" /> Submit Field again</>
+                      ) : (
+                        <><Send className="w-3.5 h-3.5" /> Submit Field</>
+                      )}
+                    </motion.button>
+                  </div>
                 </motion.div>
               );
             })}
@@ -304,6 +504,24 @@ export default function ItemEvidencePage() {
               </ul>
             </div>
           )}
+
+          {/* Additional notes — free-text passed to the AI grader as extra claim context */}
+          <div className="mt-4">
+            <label className="block text-sm font-bold text-gray-800 mb-1">
+              Anything else to describe?
+              <span className="font-normal text-gray-400 ml-1">(optional)</span>
+            </label>
+            <textarea
+              rows={3}
+              value={additionalNotes}
+              onChange={(e) => setAdditionalNotes(e.target.value)}
+              placeholder="e.g. The crack appeared after just 2 weeks of normal use. The screen still lights up but touch is broken on the left half."
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF9900] focus:border-transparent resize-none"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Your description is passed directly to the AI grader — the more specific the better.
+            </p>
+          </div>
 
           {/* Error */}
           <AnimatePresence>
@@ -352,20 +570,4 @@ function updatePhoto(state, fieldId, tmpUrl, patch) {
       photos: (f.photos || []).map((p) => (p.tmpUrl === tmpUrl ? { ...p, ...patch } : p)),
     },
   };
-}
-
-function humanizeIssues(issues = []) {
-  const map = {
-    too_blurry: 'Too blurry',
-    blurry: 'Too blurry',
-    too_dark: 'Too dark',
-    dark: 'Too dark',
-    too_bright: 'Too bright',
-    too_low_res: 'Low resolution',
-    wrong_subject: 'Wrong subject',
-    moire: 'Photo of a screen?',
-    unprocessable_image: 'Unreadable image',
-    upload_failed: 'Upload failed',
-  };
-  return issues.map((i) => map[i] || i).join(', ');
 }
