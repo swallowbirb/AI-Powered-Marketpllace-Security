@@ -1,10 +1,39 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CreditCard, X, ShieldCheck, Lock } from 'lucide-react';
+import { CreditCard, X, ShieldCheck, Lock, Package } from 'lucide-react';
 
-export default function CheckoutModal({ isOpen, onClose, onConfirm, productTitle, price, isProcessing }) {
+/**
+ * CheckoutModal — reusable for both single-product (Buy Now) and cart checkout.
+ *
+ * Single product:  pass `productTitle` + `price`
+ * Cart:            pass `items` = [{ title, price, quantity }] — renders a line-item summary
+ *
+ * Either way calls `onConfirm(mockCreditCard)` when the buyer submits.
+ */
+export default function CheckoutModal({
+  isOpen,
+  onClose,
+  onConfirm,
+  // Single-product props
+  productTitle,
+  price,
+  // Cart props
+  items,
+  // Shared
+  isProcessing,
+}) {
   const [creditCard, setCreditCard] = useState('');
   const [error, setError] = useState('');
+
+  const isCartMode = Array.isArray(items) && items.length > 0;
+
+  const total = isCartMode
+    ? items.reduce((sum, i) => sum + (i.price || 0) * (i.quantity || 1), 0)
+    : price || 0;
+
+  const itemCount = isCartMode
+    ? items.reduce((sum, i) => sum + (i.quantity || 1), 0)
+    : 1;
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -33,6 +62,7 @@ export default function CheckoutModal({ isOpen, onClose, onConfirm, productTitle
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden"
           >
+            {/* Header */}
             <div className="bg-[#f3f3f3] border-b border-gray-200 p-4 flex items-center justify-between">
               <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                 <Lock className="w-5 h-5 text-gray-500" /> Secure Checkout
@@ -47,10 +77,38 @@ export default function CheckoutModal({ isOpen, onClose, onConfirm, productTitle
             </div>
 
             <div className="p-6">
+              {/* Order summary */}
               <div className="mb-6">
-                <p className="text-sm text-gray-500 mb-1">Purchasing:</p>
-                <p className="font-medium text-gray-900 line-clamp-2 leading-tight">{productTitle}</p>
-                <p className="text-xl font-bold text-[#B12704] mt-2">${price.toFixed(2)}</p>
+                {isCartMode ? (
+                  <>
+                    <p className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
+                      <Package className="w-4 h-4" /> {itemCount} item{itemCount !== 1 ? 's' : ''} in your order
+                    </p>
+                    <ul className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                      {items.map((item, i) => (
+                        <li key={i} className="flex justify-between text-sm text-gray-700">
+                          <span className="line-clamp-1 flex-1 mr-2">
+                            <span className="text-gray-400 mr-1">×{item.quantity}</span>
+                            {item.title}
+                          </span>
+                          <span className="font-medium flex-shrink-0">
+                            ${((item.price || 0) * (item.quantity || 1)).toFixed(2)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="border-t border-gray-200 mt-3 pt-3 flex justify-between">
+                      <span className="font-bold text-gray-900">Total</span>
+                      <span className="text-xl font-bold text-[#B12704]">${total.toFixed(2)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm text-gray-500 mb-1">Purchasing:</p>
+                    <p className="font-medium text-gray-900 line-clamp-2 leading-tight">{productTitle}</p>
+                    <p className="text-xl font-bold text-[#B12704] mt-2">${total.toFixed(2)}</p>
+                  </>
+                )}
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
@@ -67,7 +125,7 @@ export default function CheckoutModal({ isOpen, onClose, onConfirm, productTitle
                       id="creditCard"
                       value={creditCard}
                       onChange={(e) => setCreditCard(e.target.value)}
-                      placeholder="e.g. 4111 1111 1111 1111 (Any number is fine)"
+                      placeholder="e.g. 4111 1111 1111 1111"
                       className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-[#FF9900] focus:border-[#FF9900] sm:text-sm transition-colors text-gray-900"
                       disabled={isProcessing}
                     />
@@ -102,7 +160,7 @@ export default function CheckoutModal({ isOpen, onClose, onConfirm, productTitle
                         Processing
                       </span>
                     ) : (
-                      'Confirm Purchase'
+                      `Confirm Purchase • $${total.toFixed(2)}`
                     )}
                   </button>
                 </div>

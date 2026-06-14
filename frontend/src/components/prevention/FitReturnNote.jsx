@@ -96,15 +96,12 @@ export default function FitReturnNote({ productId }) {
     }
   }
 
-  // High return rate — generic info note (only when no specific signal already fired)
-  if (messages.length === 0 && returnRate >= 0.20 && insight.dominantReason) {
-    const pct = Math.round(returnRate * 100);
-    const reasonLabel = insight.dominantReason.replace(/_/g, ' ');
-    messages.push({
-      icon: '↩︎',
-      text: `Returned more often than average (~${pct}%, mostly: "${reasonLabel}"). Read the description carefully before buying.`,
-    });
-  }
+  // Note: a previous build also surfaced a generic "returned more often than
+  // average (~XX%)" line when no specific fit/compat/dimension signal fired.
+  // That copy was removed because product-level return-rate disclosure
+  // discouraged purchases without giving the buyer something actionable to do.
+  // We now only surface signals tied to a concrete pre-purchase action
+  // (sizing, compat check, dimension check, color expectation).
 
   if (messages.length === 0) return null;
 

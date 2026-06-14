@@ -35,12 +35,16 @@ function timing(riskBand, trustTier) {
  * decideIntervention(ctx) → { type, action?, refundTiming, coolingOffHours? }
  *
  * Decision priority:
- *   1. bracketing detected → BRACKETING_NUDGE (any tier; framed as savings)
- *   2. fit hint actionable → FIT_NUDGE (helpful, any tier)
- *   3. high risk → INFO_NUDGE
- *   4. medium risk → INFO_NUDGE (instant refund — soft signal)
- *   5. low + genuine → CONFIDENCE_BOOST
- *   6. low + everyone else → NONE
+ *   1. fit hint actionable → FIT_NUDGE (helpful, any tier)
+ *   2. high risk → INFO_NUDGE
+ *   3. medium risk → INFO_NUDGE (instant refund — soft signal)
+ *   4. low + genuine → CONFIDENCE_BOOST
+ *   5. low + everyone else → NONE
+ *
+ * Note: bracketing detection is intentionally NOT surfaced to customers.
+ * Telling buyers "you've added multiples — keep one" suppresses cart size
+ * and basket profit. The signal still lives in the trust profile for
+ * internal risk scoring, but no customer-facing nudge fires from it.
  *
  * Genuine users (verified/trusted) NEVER get refund delays no matter what.
  * The intervention is always advisory — never a hard block.
@@ -49,23 +53,17 @@ function decideIntervention({
   riskBand,
   trustTier = 'standard',
   fitSuggestedAction = null,
-  bracketing = false,
+  bracketing = false, // accepted for API stability but no longer triggers a nudge
   category = null,
 } = {}) {
   const tier = trustTier || 'standard';
   const genuine = GENUINE_TIERS.has(tier);
 
-  // 1. Bracketing always intercepts — framed as savings, not suspicion
-  if (bracketing) {
-    return {
-      type: INTERVENTION_TYPES.BRACKETING_NUDGE,
-      refundTiming: genuine ? REFUND_TIMING.INSTANT : timing(riskBand, tier),
-      coolingOffHours: genuine ? null : timing(riskBand, tier) === 'delayed' ? COOLING_OFF_HOURS : null,
-      category,
-    };
-  }
+  // Bracketing is intentionally NOT surfaced to the customer.
+  // We keep `bracketing` in the signature so existing callers don't break,
+  // but it no longer maps to BRACKETING_NUDGE — basket size > prevention.
 
-  // 2. Fit help when we have a concrete action — pure help, any tier
+  // 1. Fit help when we have a concrete action — pure help, any tier
   if (fitSuggestedAction) {
     return {
       type: INTERVENTION_TYPES.FIT_NUDGE,
