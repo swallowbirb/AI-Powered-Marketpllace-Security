@@ -10,6 +10,7 @@ import {
   ShoppingBag, Zap, ExternalLink, Trash2, ToggleLeft, ToggleRight, X,
 } from 'lucide-react';
 import { useCustomUser } from '../context/CustomUserContext';
+import ReturnInsightsPanel from '../components/prevention/ReturnInsightsPanel';
 
 const StatusBadge = ({ status }) => {
   switch (status) {
@@ -54,6 +55,7 @@ const TABS = [
   { id: 'listings', label: 'My Listings', icon: Package },
   { id: 'offers', label: 'My Offers', icon: ShoppingBag },
   { id: 'brands', label: 'Brand Authorization', icon: Tag },
+  { id: 'insights', label: 'Return Insights', icon: Activity },
 ];
 
 const SellerDashboard = () => {
@@ -703,6 +705,19 @@ const SellerDashboard = () => {
                   </div>
                 </div>
               )}
+            </motion.div>
+          )}
+
+          {/* Phase 7 — Return Insights tab */}
+          {activeTab === 'insights' && (
+            <motion.div
+              key="insights"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <ReturnInsightsPanel />
             </motion.div>
           )}
         </AnimatePresence>

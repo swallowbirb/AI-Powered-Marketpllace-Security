@@ -490,10 +490,11 @@ the UI can render.
 
 ---
 
-## Phase 5 — Resale Marketplace, AI Listing Generation & Product Health Card
+## Phase 5 — Resale Marketplace, AI Listing Generation, Product Health Card & Real-Time Photo Verification
 
-**Goal:** Everything the buyer sees on the resale side, and the trust artefact
-that makes them buy with confidence.
+**Goal:** Everything the buyer sees on the resale side, the trust artefact
+that makes them buy with confidence, and a mandatory real-time photo check
+that ensures every listing has at least one honest, unedited reference photo.
 
 **What we build:**
 
@@ -520,7 +521,37 @@ that makes them buy with confidence.
    as a primary trust killer; we're transparent about lower grades and price
    accordingly.
 
-4. **Product Health Card.** The trust artefact. For every item that gets
+4. **Real-Time Photo Verification.** The #1 return driver across visual
+   categories (apparel, bags, furniture, home décor) is "looked different from
+   photos" — caused by heavily edited or misleading catalog shots. Every
+   listing now requires one mandatory real-time photo taken live through the
+   device camera at the moment of listing. Sellers keep full control over
+   their professional catalog photos; this adds one honest ground-truth
+   reference that cannot be faked.
+
+   - **Frontend enforcement:** the real-time photo field uses
+     `capture="environment"` — opens the rear camera directly, no gallery
+     picker. The listing form cannot be submitted without it.
+   - **Two AI checks** (run in the existing FastAPI ml-service, reusing Phase
+     2's OpenCV + EXIF infrastructure):
+     - **Moiré pattern detection** — a photo taken of a screen or printout
+       produces a characteristic wave pattern in the frequency domain that
+       OpenCV's FFT analysis catches. Real physical objects don't have it.
+     - **EXIF camera metadata** — every genuine camera shot embeds device
+       make/model and timestamp. A downloaded image, screenshot, or
+       re-photographed printout typically has this stripped.
+   - **Hard gate:** `listing.service.js` keeps the listing in `DRAFT` status
+     until `realtimePhotoVerified = true`. It cannot transition to `PUBLISHED`
+     without a passing verification.
+   - **Trust badge:** verified listings display `📷 Real Product Verified` on
+     the PDP alongside the professional catalog photos. Platform-level trust
+     that no individual seller or editing tool can fake.
+   - **Why sellers don't abuse it:** if a seller submits a misleading
+     real-time photo, the buyer sees it, loses trust, and doesn't purchase.
+     Market incentives enforce honesty — the AI only needs to close the one
+     loophole of a seller photographing their own edited image off a screen.
+
+5. **Product Health Card.** The trust artefact. For every item that gets
    listed:
    - We compute a **canonical hash** of the Grade JSON (RFC 8785 JSON
      canonicalisation — same JSON always hashes to the same value).
@@ -536,15 +567,16 @@ that makes them buy with confidence.
      legitimate (battery passport mandatory Feb 2027 under EU 2023/1542;
      textiles ~2027–2028). Honest "DPP-ready," not "DPP-compliant."
 
-5. **Multi-life Health Card.** If a resold item gets returned again or
+6. **Multi-life Health Card.** If a resold item gets returned again or
    listed again, we **append** to the existing Health Card chain instead of
    creating a new one. The artefact spans owners — a true second-life
    passport. This is the "future vision" feature from the problem statement,
    delivered cheaply.
 
 **Done means:** A graded item gets a polished AI-generated listing on the
-resale storefront, every listing has a scannable QR, scanning the QR shows a
-verifiable, signed condition record with full history.
+resale storefront; every listing has a mandatory verified real-time photo with
+a `📷 Real Product Verified` badge; every listing has a scannable QR; scanning
+the QR shows a verifiable, signed condition record with full history.
 
 ---
 
@@ -605,7 +637,7 @@ generate**: our own returns (clean `reasonCode` enum + free text), reviews, orde
 and the trust profiles Phase 3 already computes. It is more honest, more defensible,
 and genuinely self-improving.
 
-**What we build (six subsystems):**
+**What we build (ten subsystems):**
 
 1. **Return Intelligence Knowledge Base (RIKB).** A compact `returnInsights`
    aggregate — one small document per SKU, with a `(brand, category)` fallback for
@@ -622,21 +654,25 @@ and genuinely self-improving.
    *kept* a same-brand item, we add a personalized hint (*"You took M in this brand
    and kept it"*) — all from our own order/return history. This replaces the
    infeasible Misra-KNN with something cheaper and more convincing because it's real
-   platform data.
+   platform data. **Confidence floor:** fit notes are only shown on the PDP when
+   `fitSignal.confidence >= 0.5` — below that threshold, the data is too thin to be
+   useful and the note is hidden to avoid misleading buyers.
 
 3. **Return-Risk Scoring Engine (an explainable scorecard).** A pure, transparent
    **scorecard** — same pattern as Phase 3's trust scoring — scores risk 0–100 from
    features we can actually compute at checkout: the SKU's own return rate (RIKB),
    category prior, price band, condition, the buyer's trust tier + return behaviour
-   (consumed from Phase 3, never recomputed), first-time-in-category, and a fit-mismatch
-   flag. Known signals, known weights, the top-3 human-readable reasons — it runs as a
-   pure function inside the backend, needs no training and no ML round-trip, and is
-   trustworthy *because* every number is explainable. **A trained ML model (LightGBM) is
-   deliberately deferred** to post-hackathon: on the synthetic data we'd have to invent,
-   it would only re-learn the scorecard's own formula, so it adds cost and opacity
-   without adding signal. The honest upgrade — retraining on the platform's *real*
-   accumulated return labels — is a documented roadmap step, and the feature vector is
-   designed so that swap is a drop-in later.
+   (consumed from Phase 3, never recomputed), first-time-in-category, fit-mismatch
+   flag, **and real-time photo verification status** (from Phase 5 — listings without
+   a verified real-time photo on visual categories score slightly higher risk). Known
+   signals, known weights, the top-3 human-readable reasons — it runs as a pure
+   function inside the backend, needs no training and no ML round-trip, and is
+   trustworthy *because* every number is explainable. **A trained ML model (LightGBM)
+   is deliberately deferred** to post-hackathon: on the synthetic data we'd have to
+   invent, it would only re-learn the scorecard's own formula, so it adds cost and
+   opacity without adding signal. The honest upgrade — retraining on the platform's
+   *real* accumulated return labels — is a documented roadmap step, and the feature
+   vector is designed so that swap is a drop-in later.
 
 4. **Intervention Engine.** A new `prevention/` backend module maps
    (risk band × trust tier × context) to a graduated, configurable intervention — the
@@ -654,32 +690,132 @@ and genuinely self-improving.
      issued 24–48 h after grading instead of instantly; verified/trusted users are
      never delayed. (Coordinates with, doesn't duplicate, Phase 4's auto-refund gate.)
 
-5. **Seller-Side Defect & Fit Feedback.** The nightly RIKB job surfaces per-SKU
-   insights on the seller dashboard — return rate, dominant reason, fit verdict, and
-   **one LLM-summarised sentence** per significant complaint cluster (*"Buyers
-   consistently report this runs tight across the shoulders — consider updating the
-   size chart"*). The LLM call is batched nightly and cached, never per page view, so it
-   costs almost nothing. Fixing the listing prevents the *next* wave of returns.
+5. **Nudge Effectiveness Tracking.** Every nudge shown is logged in a lightweight
+   `nudgeEvents` collection — tracking whether the buyer saw it, acted on it (changed
+   size, removed extras), proceeded to purchase, and ultimately returned or kept the
+   item. This closes the feedback loop on *intervention quality*, not just product
+   quality:
+   - **Schema:** `{ userId, productId, nudgeType, shown: Boolean, acted: Boolean,
+     purchased: Boolean, returned: Boolean, timestamp }`.
+   - **Metrics surfaced:** nudge conversion rate (shown → acted), prevention rate
+     (acted → no return), ignore rate (shown → not acted → returned). Computed
+     weekly by the nightly job.
+   - **Auto-tuning signal:** if a nudge type has <10% conversion rate on a specific
+     category after sufficient volume, it's flagged for review — either the wording
+     is wrong, the placement is wrong, or the nudge isn't appropriate for that
+     category. This is surfaced on the admin dashboard.
+   - **Why it matters:** without this, Phase 7 runs on faith. With it, you can prove
+     "fit nudges prevented 215 returns this month" and kill nudges that don't work.
 
-6. **The Closed Loop.** A nightly `prevention.recompute` job rebuilds the RIKB from the
-   latest data, so every nudge sharpens over time — as real returns accumulate, the
-   return rates, fit verdicts, and complaint clusters the scorecard reads all improve on
-   their own, no retraining required. Training an ML model on accumulated *real* labels
-   is the documented next step once volume justifies it; the hackathon ships the loop
-   wiring and the nightly recompute, so "self-improving" is real today, not promised.
+6. **Buyer Post-Return Feedback.** When a buyer returns an item *despite* having been
+   shown a nudge, the return confirmation page shows a brief, non-accusatory learning
+   moment:
+   - *"You returned this because it ran small. We noticed that before you bought —
+     next time, check the fit hint on the product page to find your size."*
+   - Only shown when `nudgeEvents` confirms a nudge was shown AND ignored AND the
+     return reason matches the nudge signal (e.g., FIT_NUDGE + return reason
+     `not_as_described` with fit keywords in `reasonText`).
+   - Framed as helpful, never scolding. Goal: train the buyer to use the fit/return
+     signals on future purchases, reducing *their own* future returns.
+   - **Cost:** zero — it's a conditional message on an existing page, driven by data
+     already collected.
+
+7. **Seller-Side Defect & Fit Feedback + Before/After Tracking.** The nightly RIKB
+   job surfaces per-SKU insights on the seller dashboard — return rate, dominant
+   reason, fit verdict, and **one LLM-summarised sentence** per significant complaint
+   cluster (*"Buyers consistently report this runs tight across the shoulders —
+   consider updating the size chart"*). The LLM call is batched nightly and cached,
+   never per page view, so it costs almost nothing. Fixing the listing prevents the
+   *next* wave of returns.
+
+   **Before/After tracking (NEW):** when the nightly RIKB recomputes, it compares the
+   current return rate to the rate stored 30 days prior for each SKU. If the rate
+   dropped after the seller was shown the insight, the dashboard shows confirmation:
+   *"Return rate dropped from 31% → 18% since your listing update on June 2."*
+   - Motivates sellers to act on future insights (positive reinforcement).
+   - Identifies listings that remain broken despite seller awareness (escalation
+     candidate).
+   - **Storage:** one additional field per `returnInsight` doc:
+     `previousReturnRate30d: Number` — overwritten each nightly run with the prior
+     value.
+
+8. **Phase 5 Real-Time Photo Signal (cross-phase integration).** Phase 5 introduces
+   mandatory real-time photo verification on seller listings. Phase 7 *consumes* this
+   as an additional scorecard signal:
+   - If `product.realtimePhotoVerified === false` AND the category is visual
+     (apparel, bags, furniture, home décor, footwear), the scorecard adds a small
+     risk bump (weight 0.04) — because listings without verified real-time photos
+     are more likely to cause "looked different" returns.
+   - If `realtimePhotoVerified === true`, this signal contributes 0 to the risk
+     score — the listing has already proven its visual honesty.
+   - This creates a natural incentive loop: sellers who skip real-time verification
+     (on platforms where it's optional for legacy listings) will see their products
+     flagged as slightly higher risk, which surfaces a nudge to buyers — which
+     reduces sales — which motivates the seller to verify.
+
+9. **The Closed Loop.** A nightly `prevention.recompute` job rebuilds the RIKB from
+   the latest data, so every nudge sharpens over time — as real returns accumulate,
+   the return rates, fit verdicts, and complaint clusters the scorecard reads all
+   improve on their own, no retraining required. Training an ML model on accumulated
+   *real* labels is the documented next step once volume justifies it; the hackathon
+   ships the loop wiring and the nightly recompute, so "self-improving" is real today,
+   not promised.
+
+10. **Category-Specific Prevention Intelligence.** "Fit" is the apparel-specific
+    instance of a universal problem: expectation mismatch at the PDP. Phase 7 extends
+    the same engine — same RIKB, same scorecard, same nightly loop — to three distinct
+    category strategies, each with its own lexicon and nudge content:
+
+    - **Apparel & Footwear** (return rate 25–40%): fit signals dominate. The existing
+      fit lexicon (runs small/large), bracketing detection, and personalized size hints
+      cover this fully. Footwear extends with width signals ("narrow", "pinches",
+      "toe box") and half-size bracketing detection.
+
+    - **Electronics** (8–15%, but ₹2,500–5,500/return to process): dominant driver is
+      compatibility and setup confusion, not fit. A `COMPATIBILITY_MISMATCH` signal
+      mines return text for: `['incompatible', 'doesn't work with', 'wrong port',
+      'not supported', 'confusing', 'can't connect', 'dead on arrival']`. PDP nudge:
+      *"12% of buyers returned this citing compatibility issues — check if it works
+      with your device."* High cost-per-return makes even small reductions valuable.
+
+    - **Furniture & Home** (5–20%; reverse logistics can exceed item margin): dominant
+      drivers are dimension/space mismatch and appearance vs photos. A
+      `DIMENSION_MISMATCH` signal mines return text for size complaints (`['too big',
+      'too large', 'doesn't fit', 'doorway', 'too wide', 'too small', 'smaller than
+      expected']`) and color/appearance complaints (`['color different', 'darker',
+      'lighter', 'looks nothing like', 'doesn't match photo']`). PDP nudge: *"6 of 9
+      returns cite size issues — Dimensions: 120cm × 40cm × 180cm. Standard doorways
+      are 75cm wide."*
+
+    The unifying principle: **"Fit" is just apparel's word for expectation mismatch.**
+    Electronics has compatibility mismatch. Furniture has dimension mismatch. Same
+    engine, different lexicons. The scorecard's `FIT_MISMATCH` signal is category-aware
+    — for apparel it reads `fitSignal`, for electronics it reads `compatSignal`, for
+    furniture it reads `dimensionSignal` — same weight (0.20), same position,
+    different underlying RIKB field. This architecture makes Phase 7 credibly
+    extensible to any product vertical without changes to the core system.
+
+11. **Prevention Analytics Dashboard (admin-facing).** A simple view showing Phase 7's
+    overall impact: total nudges shown/acted on/returns prevented (from `nudgeEvents`),
+    top-5 SKUs where nudges are ignored (candidates for wording improvement), top-5
+    sellers whose return rates dropped after acting on feedback, and scorecard signal
+    contribution breakdown. The "proof it works" artifact — critical for the demo pitch.
 
 **Cost & storage discipline (the binding constraint):** no GPU and no model training (the
 scorecard is pure arithmetic); no new managed services (reuse Atlas M0); no extra
 cross-service traffic (prevention runs in the backend, not the ML service); the
 per-request path is one indexed Mongo read + pure scorecard math — no per-view LLM or
 vision calls; the only LLM use is the optional nightly, cached seller-summary batch; the
-RIKB stores bounded aggregates, not raw event history.
+RIKB stores bounded aggregates, not raw event history. The new `nudgeEvents` collection
+is append-only with a TTL index (auto-expire after 90 days) to keep storage bounded.
 
-**Done means:** the PDP shows a data-backed fit/return note; checkout shows an explainable
-risk nudge with a concrete CTA for risky baskets; bracketing is intercepted
-at the cart; refund timing respects the trust tier; the seller dashboard shows per-SKU
-return-reason clusters; and a nightly job demonstrably refreshes the knowledge base so
-the system improves with every return.
+**Done means:** the PDP shows a data-backed fit/return note (only when confidence is
+sufficient); checkout shows an explainable risk nudge with a concrete CTA for risky
+baskets; bracketing is intercepted at the cart; refund timing respects the trust tier;
+the seller dashboard shows per-SKU return-reason clusters with before/after tracking;
+nudge effectiveness is measured and surfaced; buyers who ignored nudges and returned get
+a helpful learning moment; and a nightly job demonstrably refreshes the knowledge base
+so the system improves with every return.
 
 ---
 
