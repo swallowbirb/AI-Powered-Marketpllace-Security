@@ -29,6 +29,14 @@ export const getMyItems = async () => {
   return response.data;
 };
 
+/**
+ * Add/update previous-owner notes on an item (initiator only, post-grading).
+ */
+export const updateItemNotes = async (itemId, notes) => {
+  const response = await api.patch(`/items/${itemId}/notes`, { notes });
+  return response.data;
+};
+
 export const getPresignedUrl = async ({ fileName, contentType, itemId }) => {
   const response = await api.post('/uploads/presign', { fileName, contentType, itemId });
   return response.data;

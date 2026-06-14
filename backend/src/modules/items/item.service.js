@@ -370,13 +370,50 @@ const getItemStatus = async (itemId) => {
     category: item.category || null,
     reasonCode: item.reasonCode || null,
     reasonText: item.reasonText || null,
+<<<<<<< Updated upstream
     evidenceForm: item.evidenceForm || null,
     clarifyingPhotos: item.clarifyingPhotos || [],
+=======
+    ownerNotes: item.ownerNotes || '',
+>>>>>>> Stashed changes
     grade: grade || null,
     routingDecision: null, // populated in P4
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
   };
+};
+
+/**
+ * Add/update previous-owner notes on an item (Phase B — B4).
+ * Initiator-only; allowed once the item is graded (status ≥ GRADED). If a
+ * resale listing already exists, the note is mirrored onto it.
+ */
+const POST_GRADED_STATUSES = ['GRADED', 'ROUTED', 'IN_TRANSIT', 'LISTED', 'SOLD', 'DONATED', 'LIQUIDATED'];
+
+const addOwnerNotes = async (itemId, userId, notes) => {
+  const item = await Item.findById(itemId);
+  if (!item) throw new Error('Item not found');
+  if (item.initiatorUserId.toString() !== userId.toString()) throw new Error('Forbidden');
+  if (!POST_GRADED_STATUSES.includes(item.status)) {
+    throw new Error('Notes can only be added once the item has been graded');
+  }
+
+  item.ownerNotes = typeof notes === 'string' ? notes.trim() : '';
+  await item.save();
+
+  await ItemLogger.log(itemId, 'OWNER_NOTES', '📝 Previous-owner notes updated', {
+    length: item.ownerNotes.length,
+  });
+
+  // Mirror onto an existing resale listing, if any (defensive — module optional).
+  try {
+    const ResaleListing = require('../resale/resale.model');
+    await ResaleListing.findOneAndUpdate({ itemId }, { previousOwnerNotes: item.ownerNotes });
+  } catch (_) {
+    /* resale module optional */
+  }
+
+  return item;
 };
 
 module.exports = {
@@ -388,4 +425,5 @@ module.exports = {
   getItemById,
   getItemsByUser,
   getItemStatus,
+  addOwnerNotes,
 };

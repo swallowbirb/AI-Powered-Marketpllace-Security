@@ -186,6 +186,15 @@ export default function Navbar() {
               </>
             )}
 
+            {/* Second-Life resale storefront — public to all */}
+            <Link
+              to="/resale"
+              className="flex flex-col hover:outline hover:outline-white hover:outline-1 rounded px-2 py-1 transition-all cursor-pointer text-xs select-none justify-center"
+            >
+              <span className="text-zinc-300 text-[11px] leading-tight">Shop</span>
+              <span className="font-bold text-[13px] leading-tight text-emerald-400">Second-Life</span>
+            </Link>
+
             {/* Cart icon */}
             <div className="flex items-end gap-1 hover:outline hover:outline-white hover:outline-1 rounded px-2 py-1 transition-all cursor-pointer">
               <ShoppingCart className="w-8 h-8 text-white" />

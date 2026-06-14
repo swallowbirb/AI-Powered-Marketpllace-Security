@@ -1,11 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useLocation, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { getItemStatus } from '../services/item.service';
+import { getItemStatus, updateItemNotes } from '../services/item.service';
 import DeveloperLogsSidebar from '../components/shared/DeveloperLogsSidebar';
 import TrustTierBadge from '../components/shared/TrustTierBadge';
 import {
-  Loader2, CheckCircle2, Clock, AlertCircle, Recycle, ShoppingBag, Package, ChevronDown,
+  Loader2, CheckCircle2, Clock, AlertCircle, Recycle, ShoppingBag, Package, ChevronDown, Pencil,
 } from 'lucide-react';
 
 const STEPS = [
@@ -38,6 +38,12 @@ export default function ItemStatusPage() {
   const [error, setError] = useState(null);
   const [rationaleOpen, setRationaleOpen] = useState(false);
 
+  // Previous-owner notes (editable once graded).
+  const [notesDraft, setNotesDraft] = useState('');
+  const [notesInit, setNotesInit] = useState(false);
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [notesSaved, setNotesSaved] = useState(false);
+
   const fetchStatus = useCallback(async () => {
     try {
       const res = await getItemStatus(itemId);
@@ -65,6 +71,34 @@ export default function ItemStatusPage() {
   const currentStepIdx = status ? STATUS_ORDER.indexOf(status.status) : 0;
   const grade = status?.grade;
   const label = intakePath === 'sell-used' ? 'Sell Used' : 'Return';
+
+  // Seed the notes draft once status arrives.
+  useEffect(() => {
+    if (status && !notesInit) {
+      setNotesDraft(status.ownerNotes || '');
+      setNotesInit(true);
+    }
+  }, [status, notesInit]);
+
+  const POST_GRADED = ['GRADED', 'ROUTED', 'IN_TRANSIT', 'LISTED', 'SOLD', 'DONATED', 'LIQUIDATED'];
+  const canAddNotes = status && POST_GRADED.includes(status.status);
+
+  const handleSaveNotes = async () => {
+    setSavingNotes(true);
+    setNotesSaved(false);
+    try {
+      const res = await updateItemNotes(itemId, notesDraft);
+      if (res.success) {
+        setNotesSaved(true);
+        setStatus((cur) => (cur ? { ...cur, ownerNotes: res.data.ownerNotes } : cur));
+        setTimeout(() => setNotesSaved(false), 2500);
+      }
+    } catch {
+      /* surfaced inline below */
+    } finally {
+      setSavingNotes(false);
+    }
+  };
 
   return (
     <div className="flex">
@@ -242,6 +276,50 @@ export default function ItemStatusPage() {
                   {status?.status === 'REJECTED' && (
                     <p className="text-sm text-red-600">This submission was rejected by our fraud checks and requires manual review.</p>
                   )}
+                </motion.div>
+              )}
+
+              {/* Previous-owner notes — editable once graded (Phase B). */}
+              {canAddNotes && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-white border border-gray-200 rounded-2xl p-5 mt-6"
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <Pencil className="w-4 h-4 text-[#FF9900]" />
+                    <p className="font-bold text-gray-900 text-sm">Notes for buyers</p>
+                  </div>
+                  <p className="text-xs text-gray-500 mb-3 leading-relaxed">
+                    Add any honest details about this item — how you used it, what's included, why you're parting with it.
+                    These notes appear on the resale listing.
+                  </p>
+                  <textarea
+                    value={notesDraft}
+                    onChange={(e) => setNotesDraft(e.target.value)}
+                    maxLength={2000}
+                    rows={3}
+                    placeholder="e.g. Bought last year, barely used, comes with original box and charger."
+                    className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF9900] resize-none"
+                  />
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-[11px] text-gray-400">{notesDraft.length}/2000</span>
+                    <div className="flex items-center gap-2">
+                      {notesSaved && (
+                        <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Saved
+                        </span>
+                      )}
+                      <button
+                        onClick={handleSaveNotes}
+                        disabled={savingNotes}
+                        className="amz-btn-primary px-4 py-1.5 rounded-full text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5"
+                      >
+                        {savingNotes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                        Save notes
+                      </button>
+                    </div>
+                  </div>
                 </motion.div>
               )}
 
