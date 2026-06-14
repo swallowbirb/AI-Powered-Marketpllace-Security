@@ -9,15 +9,15 @@ const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:8000';
 const ML_TIMEOUT_MS = 30000; // Req 1.4 / 14.1 — 30s request timeout
 const ML_GRADE_ENDPOINT = `${ML_SERVICE_URL}/grade/`;
 
-// Configured Bedrock models (mirrors ml-service config) — surfaced in logs so devs
+// Configured Gemini models (mirrors ml-service config) — surfaced in logs so devs
 // can see which model the pipeline is expected to call.
-const BEDROCK_PRIMARY = process.env.BEDROCK_MODEL_PRIMARY || 'amazon.nova-pro-v1:0';
-const BEDROCK_FALLBACK = process.env.BEDROCK_MODEL_FALLBACK || 'anthropic.claude-3-5-sonnet-20241022-v2:0';
+const GEMINI_PRIMARY = process.env.GEMINI_MODEL_PRIMARY || 'gemini-2.5-flash';
+const GEMINI_FALLBACK = process.env.GEMINI_MODEL_FALLBACK || 'gemini-2.5-flash-lite';
 
 /**
  * Emit detailed, technical logs reconstructed from an ML GradingResponse.
  * Surfaces fraud preflight, each parallel analysis (OpenCV / CLIP / Rekognition /
- * Textract), the Bedrock model(s) used, and the synthesized grade fields.
+ * Textract), the Gemini model(s) used, and the synthesized grade fields.
  */
 const logMlPipelineDetail = async (itemId, ml) => {
   // --- Fraud preflight ---
@@ -100,11 +100,11 @@ const logMlPipelineDetail = async (itemId, ml) => {
     );
   }
 
-  // --- Bedrock model(s) used in Pass 2 ---
+  // --- Gemini model(s) used in Pass 2 ---
   const mv = ml.model_versions || {};
   if (mv.pass2Model || mv.pass1Model) {
     await ItemLogger.log(itemId, 'MODEL_INVOKE',
-      `🤖 Bedrock Pass 2 synthesized grade using ${mv.pass2Model || 'unknown model'}`,
+      `🤖 Gemini Pass 2 synthesized grade using ${mv.pass2Model || 'unknown model'}`,
       {
         pass1Model: mv.pass1Model,
         pass2Model: mv.pass2Model,
@@ -268,10 +268,11 @@ const persistGrade = async ({ payload, ml }) => {
  */
 const triggerGrading = async (itemId, options = {}) => {
   // Normalize both calling conventions into one payload.
+  const productId = options.originalProductId || options.productId;
   const payload = {
     itemId,
     userId: options.userId,
-    productId: options.originalProductId || options.productId,
+    productId,
     reason: options.reason || options.returnClaimDescription || 'used item submission',
     imageUrls: options.evidencePhotos || options.imageUrls || [],
     intakePath: options.intakePath || 'sell-used',
@@ -279,6 +280,33 @@ const triggerGrading = async (itemId, options = {}) => {
     listingImageUrls: options.listingImageUrls || [],
     catalogHashes: options.catalogHashes || [],
   };
+
+  // Backfill listing reference photos from the catalog when the caller didn't
+  // supply them. The visual-comparison analyses (OpenCV colour delta, CLIP
+  // similarity) need the original product photos as a reference; without them
+  // those steps are skipped. attachEvidence only passes originalProductId, so we
+  // resolve the product's catalog images here.
+  if (payload.listingImageUrls.length === 0 && payload.productId &&
+      mongoose.Types.ObjectId.isValid(payload.productId)) {
+    try {
+      const Product = require('../products/product.model');
+      const product = await Product.findById(payload.productId).select('images').lean();
+      if (product && Array.isArray(product.images) && product.images.length > 0) {
+        payload.listingImageUrls = product.images;
+        await ItemLogger.log(itemId, 'ANALYSIS_REFERENCE',
+          `🖼️ Loaded ${product.images.length} listing reference photo(s) from the catalog ` +
+          `for visual comparison.`,
+          { phase: 'request', level: 'info', referenceCount: product.images.length,
+            productId: String(payload.productId) }
+        );
+      }
+    } catch (err) {
+      await ItemLogger.log(itemId, 'ANALYSIS_REFERENCE',
+        `⚠️ Could not load catalog reference photos — ${err.message || err}`,
+        { phase: 'request', level: 'warn', productId: String(payload.productId) }
+      );
+    }
+  }
 
   // --- Log the outgoing request (Req 1.4, 14) ---
   await ItemLogger.log(itemId, 'GRADING_REQUEST',
@@ -292,8 +320,8 @@ const triggerGrading = async (itemId, options = {}) => {
       evidencePhotoCount: payload.imageUrls.length,
       listingReferenceCount: payload.listingImageUrls.length,
       hasCatalogHashes: payload.catalogHashes.length > 0,
-      expectedPrimaryModel: BEDROCK_PRIMARY,
-      expectedFallbackModel: BEDROCK_FALLBACK,
+      expectedPrimaryModel: GEMINI_PRIMARY,
+      expectedFallbackModel: GEMINI_FALLBACK,
     }
   );
 
@@ -312,7 +340,7 @@ const triggerGrading = async (itemId, options = {}) => {
 
   try {
     await ItemLogger.log(itemId, 'FRAUD_CHECK',
-      '🛡️ ML pipeline started: fraud preflight → parallel analysis → Bedrock Pass 2...',
+      '🛡️ ML pipeline started: fraud preflight → parallel analysis → Gemini Pass 2...',
       { phase: 'request' });
     const { data, ms } = await callMlGrade(payload);
     ml = data;
@@ -333,7 +361,7 @@ const triggerGrading = async (itemId, options = {}) => {
     if (err.code === 'ECONNREFUSED') {
       reason = `ML service is not running at ${ML_SERVICE_URL} (ECONNREFUSED). Start it with: cd ml-service && uvicorn app.main:app --reload --port 8000`;
     } else if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
-      reason = `ML service timed out after ${ML_TIMEOUT_MS / 1000}s (${err.code}). Bedrock or a downstream AWS service may be slow.`;
+      reason = `ML service timed out after ${ML_TIMEOUT_MS / 1000}s (${err.code}). Gemini or a downstream AWS service may be slow.`;
     } else if (err.response) {
       const body = err.response.data;
       const inner = body?.detail?.error || (typeof body?.detail === 'string' ? body.detail : null) || body?.message;
@@ -343,7 +371,7 @@ const triggerGrading = async (itemId, options = {}) => {
     }
 
     // The ML service attaches its full internal trace to the error detail when a
-    // stage fails (e.g. Bedrock AccessDenied in Pass 2). Replay it so the REAL
+    // stage fails (e.g. Gemini PERMISSION_DENIED in Pass 2). Replay it so the REAL
     // cause is visible in the sidebar — not just "HTTP 502".
     const errTrace = err.response?.data?.detail?.trace || err.response?.data?.trace;
     if (Array.isArray(errTrace) && errTrace.length > 0) {
@@ -511,7 +539,7 @@ const startFormGeneration = async (itemId, { productId, reason, category, initia
     }, { timeout: ML_TIMEOUT_MS });
     const ms = Date.now() - startedAt;
 
-    // Replay the ML service's Pass 1 internal trace (image fetches, Bedrock call).
+    // Replay the ML service's Pass 1 internal trace (image fetches, Gemini call).
     if (Array.isArray(resp.data?.trace) && resp.data.trace.length > 0) {
       await ItemLogger.ingestTrace(itemId, resp.data.trace, { source: 'ml' });
     }

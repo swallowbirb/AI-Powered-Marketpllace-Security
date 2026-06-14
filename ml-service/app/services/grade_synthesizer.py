@@ -1,8 +1,8 @@
 """
-Bedrock Pass 2 — Grade Synthesizer (Task 2.8, Requirement 7)
+Gemini Pass 2 — Grade Synthesizer (Task 2.8, Requirement 7)
 
 Sends the Analysis_Summary TEXT ONLY (no raw images) plus base + category prompts to
-Bedrock, parses to a canonical Grade JSON, and enforces enums + numeric bounds. Sets
+Gemini, parses to a canonical Grade JSON, and enforces enums + numeric bounds. Sets
 missingEvidence from insufficient-evidence signals and downgrades confidence.
 """
 import json
@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional
 
 from app.config import settings
 from app.services import prompt_loader
-from app.services.bedrock import bedrock_service, BedrockError, BedrockJSONError
+from app.services.gemini import gemini_service, GeminiError, GeminiJSONError
 from app.services.rekognition import REKOGNITION_VERSION
 from app.services.grade_validation import coerce_and_validate, GradeValidationError
 
@@ -39,18 +39,18 @@ async def synthesize_grade(
     if trace is not None:
         trace.info("pass2", "PASS2_PROMPT",
                    f"📝 Pass 2 prompt composed ({len(prompt)} chars, category={category or 'generic'}). "
-                   "Sending the TEXT analysis summary only (no raw images) to Bedrock.",
+                   "Sending the TEXT analysis summary only (no raw images) to Gemini.",
                    prompt_chars=len(prompt), category=category)
 
     try:
-        raw = await bedrock_service.invoke_json(prompt, images=None, max_tokens=2000,
+        raw = await gemini_service.invoke_json(prompt, images=None, max_tokens=2000,
                                                 trace=trace, phase="pass2", label="Pass 2 grade synthesizer")
-    except (BedrockError, BedrockJSONError) as exc:
-        # The detailed per-attempt error was already traced inside bedrock_service.
+    except (GeminiError, GeminiJSONError) as exc:
+        # The detailed per-attempt error was already traced inside gemini_service.
         if trace is not None:
             trace.error("pass2", "PASS2_FAILED",
                         f"❌ Pass 2 grade synthesis failed — {type(exc).__name__}: {exc}", exc=exc)
-        raise GradeSynthesisError(f"Bedrock Pass-2 failed: {exc}") from exc
+        raise GradeSynthesisError(f"Gemini Pass-2 failed: {exc}") from exc
 
     try:
         grade = coerce_and_validate(raw, analysis_summary)
@@ -59,9 +59,9 @@ async def synthesize_grade(
             trace.error("pass2", "PASS2_VALIDATION",
                         f"❌ Pass 2 returned JSON that failed grade validation: {exc}", exc=exc, raw=raw)
         raise GradeSynthesisError(str(exc)) from exc
-    used_pass2_model = getattr(bedrock_service, "_current_model", settings.bedrock_model_primary)
+    used_pass2_model = getattr(gemini_service, "_current_model", settings.gemini_model_primary)
     grade["modelVersions"] = {
-        "pass1Model": pass1_model or settings.bedrock_model_primary,
+        "pass1Model": pass1_model or settings.gemini_model_primary,
         "pass2Model": used_pass2_model,
         "rekognitionVersion": REKOGNITION_VERSION,
     }

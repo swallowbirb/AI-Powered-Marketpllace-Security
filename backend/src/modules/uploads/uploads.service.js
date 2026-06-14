@@ -37,7 +37,9 @@ const generatePresignedUrl = async ({ fileName, contentType, itemId, userId = 'a
     Bucket: BUCKET,
     Key: key,
     ContentType: contentType,
-    ContentLength: MAX_SIZE_MB * 1024 * 1024, // max allowed size
+    // Do NOT set ContentLength on a presigned URL — S3 enforces it exactly,
+    // so any file smaller than MAX_SIZE_MB would be rejected with a 403.
+    // The browser sends the real Content-Length header automatically.
   });
 
   const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: URL_EXPIRY_SECONDS });

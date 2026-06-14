@@ -2,7 +2,7 @@
 PipelineTrace — developer-visibility instrumentation for the ML grading pipeline.
 
 The Node backend can only see what the ML service *returns*. Historically every
-internal step (each S3 image fetch, each Bedrock attempt, each vision call) was
+internal step (each S3 image fetch, each Gemini attempt, each vision call) was
 invisible: failures were swallowed into a Python ``logger.warning`` and the only
 thing that reached the Developer Logs sidebar was a generic "ML service failed".
 
@@ -158,7 +158,7 @@ class PipelineTrace:
         Context manager that times a block of work.
 
         Usage:
-            with trace.step(PHASE_PASS2, "BEDROCK_PASS2", "Synthesizing grade...") as s:
+            with trace.step(PHASE_PASS2, "MODEL_PASS2", "Synthesizing grade...") as s:
                 result = await do_work()
                 s.done(f"Grade {result['grade']} synthesized")
 

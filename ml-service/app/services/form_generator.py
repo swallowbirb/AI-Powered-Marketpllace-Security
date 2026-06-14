@@ -1,9 +1,9 @@
 """
-Bedrock Pass 1 — Form Generator + cache (Task 2.5, Requirements 3 & 11)
+Gemini Pass 1 — Form Generator + cache (Task 2.5, Requirements 3 & 11)
 
-Composes the Pass-1 prompt (base + category + template), calls Bedrock invoke_json,
+Composes the Pass-1 prompt (base + category + template), calls Gemini invoke_json,
 validates the Form_Schema shape, and caches results keyed by
-hash(productId + normalized_reason). On Bedrock failure: serve cache if present,
+hash(productId + normalized_reason). On Gemini failure: serve cache if present,
 else a generic default schema.
 """
 import json
@@ -12,7 +12,7 @@ from typing import Optional, List
 
 from app.config import settings
 from app.services import prompt_loader
-from app.services.bedrock import bedrock_service, BedrockError, BedrockJSONError
+from app.services.gemini import gemini_service, GeminiError, GeminiJSONError
 from app.services.ttl_cache import TTLCache, cache_key
 from app.services.image_utils import try_fetch_image_bytes
 
@@ -29,7 +29,7 @@ STATUS_FALLBACK_GENERIC = "generic_default"
 
 
 def _generic_default_schema(category: Optional[str]) -> dict:
-    """Generic fallback Form_Schema used when Bedrock is unavailable (Req 11.4)."""
+    """Generic fallback Form_Schema used when Gemini is unavailable (Req 11.4)."""
     return {
         "title": "Item Condition Evidence",
         "fields": [
@@ -88,12 +88,12 @@ async def generate_form(
     """
     key = cache_key(product_id, reason)
 
-    # Cache hit -> skip Bedrock entirely (Req 3.3, 12.3).
+    # Cache hit -> skip Gemini entirely (Req 3.3, 12.3).
     cached = _pass1_cache.get(key)
     if cached is not None:
         if trace is not None:
             trace.success("pass1", "PASS1_CACHE",
-                          f"⚡ Pass 1 cache HIT (key={key}) — skipping Bedrock entirely", cache_key=key)
+                          f"⚡ Pass 1 cache HIT (key={key}) — skipping Gemini entirely", cache_key=key)
         return {"schema": cached, "status": STATUS_CACHE, "cached": True, "key": key}
 
     if trace is not None:
@@ -130,10 +130,10 @@ async def generate_form(
                        attached=len(images))
 
     try:
-        schema = await bedrock_service.invoke_json(prompt, images=images or None, max_tokens=1500,
+        schema = await gemini_service.invoke_json(prompt, images=images or None, max_tokens=1500,
                                                    trace=trace, phase="pass1", label="Pass 1 form generator")
         if not _is_valid_form_schema(schema):
-            raise BedrockJSONError("Form schema failed shape validation")
+            raise GeminiJSONError("Form schema failed shape validation")
         schema.setdefault("category", category or "generic")
         schema["generated"] = True
         _pass1_cache.set(key, schema)
@@ -144,20 +144,20 @@ async def generate_form(
                           field_count=field_count, status=STATUS_AI)
         return {"schema": schema, "status": STATUS_AI, "cached": False, "key": key}
 
-    except (BedrockError, BedrockJSONError) as exc:
-        logger.warning("Pass-1 Bedrock failed (%s); applying fallback", exc)
+    except (GeminiError, GeminiJSONError) as exc:
+        logger.warning("Pass-1 Gemini failed (%s); applying fallback", exc)
         # Degraded: serve cache if any (shouldn't be, we already checked), else generic.
         fallback_cached = _pass1_cache.get(key)
         if fallback_cached is not None:
             if trace is not None:
                 trace.warn("pass1", "PASS1_FALLBACK",
-                           f"⚠️ Pass 1 Bedrock failed ({type(exc).__name__}); serving cached schema instead",
+                           f"⚠️ Pass 1 Gemini failed ({type(exc).__name__}); serving cached schema instead",
                            status=STATUS_FALLBACK_CACHE)
             return {"schema": fallback_cached, "status": STATUS_FALLBACK_CACHE,
                     "cached": True, "key": key}
         if trace is not None:
             trace.warn("pass1", "PASS1_FALLBACK",
-                       f"⚠️ Pass 1 Bedrock failed ({type(exc).__name__}); serving the GENERIC default form. "
+                       f"⚠️ Pass 1 Gemini failed ({type(exc).__name__}); serving the GENERIC default form. "
                        "The user still gets a usable form, but it is not AI-tailored.",
                        status=STATUS_FALLBACK_GENERIC)
         return {"schema": _generic_default_schema(category), "status": STATUS_FALLBACK_GENERIC,

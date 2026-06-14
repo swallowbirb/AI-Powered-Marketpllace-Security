@@ -67,7 +67,7 @@ async def grade_item(request: GradingRequest):
                item_id=request.item_id, photo_count=len(photos),
                reference_count=len(request.listing_image_urls), category=request.category)
 
-    # Base prompt must be loadable before any Bedrock work (Req 13.5).
+    # Base prompt must be loadable before any Gemini work (Req 13.5).
     try:
         load_base_prompt()
     except PromptError as exc:
@@ -79,7 +79,7 @@ async def grade_item(request: GradingRequest):
     fraud = await fraud_preflight.run_preflight(photos, request.catalog_hashes, trace=trace)
 
     if fraud["classification"] == fraud_preflight.CLASSIFICATION_HARD:
-        # Short-circuit: skip both Bedrock passes, persist no grade (Req 2.3).
+        # Short-circuit: skip both Gemini passes, persist no grade (Req 2.3).
         trace.warn("response", "GRADE_SHORTCIRCUIT",
                    f"🚫 Hard fraud signal ({fraud.get('triggering_signal')}) — rejecting before grading",
                    triggering_signal=fraud.get("triggering_signal"))

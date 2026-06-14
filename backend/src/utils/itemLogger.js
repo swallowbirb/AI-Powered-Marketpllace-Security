@@ -9,7 +9,7 @@ const ItemLog = require('../modules/items/itemLog.model');
  *   3. Echoed to the backend console for local debugging.
  *
  * It also ingests the ML service's internal `trace` (see ingestTrace) so the
- * FastAPI pipeline — image fetches, Bedrock attempts, vision calls — is no longer
+ * FastAPI pipeline — image fetches, Gemini attempts, vision calls — is no longer
  * a black box: every internal step lands in the same ordered stream.
  *
  * NEVER throws — logging failures must not break the business flow.
@@ -39,7 +39,7 @@ const PHASE_RULES = [
   [/^(GRADING_REQUEST|GRADE_RECEIVED|ML_UNAVAILABLE|ML_INVALID_RESPONSE)$/, 'request'],
   [/^FRAUD_/, 'fraud'],
   [/^(ANALYSIS_|IMAGE_FETCH)/, 'analysis'],
-  [/^(PASS2_|MODEL_INVOKE|BEDROCK_)/, 'pass2'],
+  [/^(PASS2_|MODEL_|BEDROCK_)/, 'pass2'],
   [/^(PERSIST|LIFECYCLE_EMIT)/, 'persist'],
   [/^(GRADE_ASSIGNED|GRADE_REJECTED|STATUS_UPDATE|REVIEW_FLAGGED|FLOW_COMPLETE)$/, 'complete'],
   [/^ERROR$/, 'error'],
@@ -136,7 +136,7 @@ class ItemLogger {
    * Each trace entry already carries phase / level / duration / message, so we
    * map them straight into log documents (bulk insert for speed) rather than
    * re-deriving. This is what turns the FastAPI pipeline from a black box into a
-   * fully visible, step-by-step story (image fetches, Bedrock attempts, etc.).
+   * fully visible, step-by-step story (image fetches, Gemini attempts, etc.).
    *
    * @param {string} itemId
    * @param {Array} trace - array of { seq, phase, code, level, message, ts, duration_ms, meta }

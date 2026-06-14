@@ -7,7 +7,7 @@ FastAPI microservice for AI/ML workloads — grading, vision, return prediction.
 ```bash
 cd ml-service
 pip install -r requirements.txt
-cp .env.example .env   # then fill in your AWS keys
+cp .env.example .env   # then fill in your GEMINI_API_KEY + AWS keys
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -29,12 +29,12 @@ uvicorn app.main:app --reload --port 8000
 
 1. **Fraud preflight** (`services/fraud_preflight.py`) — imagehash vs catalog, EXIF
    camera metadata, Rekognition web/label signal. A hard signal short-circuits both
-   Bedrock passes.
+   Gemini passes.
 2. **Parallel analysis** (`services/analysis_orchestrator.py`) — OpenCV color/histogram,
    CLIP visual similarity, Rekognition labels, Textract OCR via `asyncio.gather`. A
    single tool failure becomes a warning, not a crash.
 3. **Pass 2 synthesis** (`services/grade_synthesizer.py`) — text-only Analysis_Summary +
-   base/category prompts to Bedrock, coerced into a canonical Grade JSON.
+   base/category prompts to Gemini, coerced into a canonical Grade JSON.
 
 `POST /grade/form` runs **Pass 1** (`services/form_generator.py`) — generates a tailored
 evidence Form_Schema, cached by `hash(productId + normalized_reason)` with TTL.
@@ -60,7 +60,7 @@ app/
 ├── main.py           ← FastAPI app, CORS, router registration
 ├── config.py         ← Pydantic settings from .env
 ├── routers/          ← One file per domain
-├── services/         ← AWS clients (Bedrock, Rekognition, Textract, CLIP)
+├── services/         ← Gemini LLM + AWS clients (Rekognition, Textract, CLIP)
 └── models/           ← Pydantic request/response schemas
 trained_models/       ← .joblib files for XGBoost (Phase 7)
 ```

@@ -6,7 +6,7 @@ const mongoose = require('mongoose');
  * Plain-English logs emitted at every step of the intake → grade flow so the
  * frontend Developer Logs Sidebar (and backend console) can show exactly what
  * happened, in order, for a given item — including the ML service's internal
- * pipeline steps (image fetches, Bedrock attempts, vision calls) which are
+ * pipeline steps (image fetches, Gemini attempts, vision calls) which are
  * ingested verbatim from the ML `trace`.
  *
  * These are diagnostic logs, NOT the tamper-evident lifecycle events (those live
@@ -19,7 +19,7 @@ const itemLogSchema = new mongoose.Schema({
     required: true,
     index: true,
   },
-  // Machine step key, e.g. INITIATE, FRAUD_RESULT, BEDROCK_INVOKE, GRADE_ASSIGNED, ERROR.
+  // Machine step key, e.g. INITIATE, FRAUD_RESULT, MODEL_INVOKE, GRADE_ASSIGNED, ERROR.
   step: { type: String, required: true },
   // Human-readable, plain-English message.
   message: { type: String, required: true },
