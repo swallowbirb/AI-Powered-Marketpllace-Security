@@ -1,3 +1,8 @@
+from pathlib import Path
+
+# Absolute path to ml-service/.env so settings load correctly regardless of CWD.
+_ENV_FILE = str(Path(__file__).parent.parent / ".env")
+
 try:
     from pydantic_settings import BaseSettings
     _HAS_PYDANTIC_SETTINGS = True
@@ -7,6 +12,11 @@ except Exception:  # noqa: BLE001 — allow importing pure logic without deps in
     class BaseSettings:  # minimal shim: reads env vars, uses class defaults otherwise
         def __init__(self):
             import os
+            try:
+                from dotenv import load_dotenv
+                load_dotenv(_ENV_FILE)
+            except ImportError:
+                pass
             for name, default in type(self).__dict__.items():
                 if name.startswith("_") or callable(default) or isinstance(default, classmethod):
                     continue
@@ -42,8 +52,10 @@ class Settings(BaseSettings):
 
     # --- Gemini (LLM provider for Pass 1 + Pass 2) ---
     gemini_api_key: str = ""
-    gemini_model_primary: str = "gemini-2.5-flash"
-    gemini_model_fallback: str = "gemini-2.5-flash-lite"
+    # flash-lite is the primary (cheapest/fastest); flash is the genuine fallback
+    # so a single flash-lite hiccup still has a different model to retry against.
+    gemini_model_primary: str = "gemini-2.5-flash-lite"
+    gemini_model_fallback: str = "gemini-2.5-flash"
 
     # --- Phase 2 grading tunables ---
     grade_cache_ttl_seconds: int = 3600          # Pass-1 form-schema cache TTL
@@ -69,7 +81,7 @@ class Settings(BaseSettings):
     risk_medium_threshold: float = 0.30
 
     class Config:
-        env_file = ".env"
+        env_file = _ENV_FILE
         case_sensitive = False
 
 

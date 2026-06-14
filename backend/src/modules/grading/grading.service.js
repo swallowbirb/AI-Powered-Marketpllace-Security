@@ -6,13 +6,13 @@ const { emitGraded } = require('./lifecycleEmitter');
 const ItemLogger = require('../../utils/itemLogger');
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:8000';
-const ML_TIMEOUT_MS = 30000; // Req 1.4 / 14.1 — 30s request timeout
+const ML_TIMEOUT_MS = parseInt(process.env.ML_TIMEOUT_MS || '120000', 10); // analysis fanout alone can take 60s; keep well above internal budgets
 const ML_GRADE_ENDPOINT = `${ML_SERVICE_URL}/grade/`;
 
 // Configured Gemini models (mirrors ml-service config) — surfaced in logs so devs
 // can see which model the pipeline is expected to call.
-const GEMINI_PRIMARY = process.env.GEMINI_MODEL_PRIMARY || 'gemini-2.5-flash';
-const GEMINI_FALLBACK = process.env.GEMINI_MODEL_FALLBACK || 'gemini-2.5-flash-lite';
+const GEMINI_PRIMARY = process.env.GEMINI_MODEL_PRIMARY || 'gemini-2.5-flash-lite';
+const GEMINI_FALLBACK = process.env.GEMINI_MODEL_FALLBACK || 'gemini-2.5-flash';
 
 /**
  * Emit detailed, technical logs reconstructed from an ML GradingResponse.
@@ -197,6 +197,7 @@ const callMlGrade = async (payload) => {
     original_product_id: payload.productId,
     listing_image_urls: payload.listingImageUrls || [],
     catalog_hashes: payload.catalogHashes || [],
+    field_images: payload.fieldImages || {},
   };
 
   const startedAt = Date.now();
@@ -275,6 +276,7 @@ const triggerGrading = async (itemId, options = {}) => {
     productId,
     reason: options.reason || options.returnClaimDescription || 'used item submission',
     imageUrls: options.evidencePhotos || options.imageUrls || [],
+    fieldImages: options.fieldImages || {},
     intakePath: options.intakePath || 'sell-used',
     category: options.category,
     listingImageUrls: options.listingImageUrls || [],
@@ -497,37 +499,109 @@ const getFlaggedGrades = async ({ role, userId }) => {
   return Grade.find(query).sort({ createdAt: -1 }).lean();
 };
 
-// --- Progressive form rendering (Task 2.11, Requirement 4) ---
+// --- Progressive / dynamic form rendering (v3.44, Requirement 4) ---
+//
+// Source of truth is the Item document's `evidenceForm` sub-doc (survives restart
+// and multiple instances). The in-memory map is only a fast cache so polling reads
+// don't hit Mongo every 1.5s. The generic fallback schema is sourced from the ML
+// service's response (status=generic_default) — no duplicated copy lives here
+// anymore (improvement #6).
 
-// In-memory readiness store: itemId -> { status, schema }.
+const Item = require('../items/item.model');
+
+// In-memory readiness cache: itemId -> { status, schema, source, schemaVersion }.
 const _formState = new Map();
 
-const GENERIC_FORM_FIELDS = {
+/**
+ * Minimal generic schema used ONLY if the ML service is unreachable before it can
+ * even return its own generic_default (network down at form time). Kept tiny and
+ * marked so it is visibly a last-resort, not the canonical generic form.
+ */
+const LAST_RESORT_FORM = {
   title: 'Item Condition Evidence',
   fields: [
     { id: 'front_photo', label: 'Front view', type: 'photo', required: true,
-      guidance: 'Clear, well-lit photo of the front of the item.' },
+      guidance: 'Clear, well-lit photo of the front of the item.',
+      expected_subject: 'the front of the item' },
     { id: 'back_photo', label: 'Back view', type: 'photo', required: true,
-      guidance: 'Clear photo of the back of the item.' },
+      guidance: 'Clear photo of the back of the item.',
+      expected_subject: 'the back of the item' },
     { id: 'defect_photo', label: 'Close-up of any damage', type: 'photo', required: false,
-      guidance: 'Close-up of any defect, wear, or damage.' },
+      guidance: 'Close-up of any defect, wear, or damage.',
+      expected_subject: 'a close-up of damage or wear' },
     { id: 'condition_notes', label: 'Condition notes', type: 'text', required: false,
       guidance: 'Describe the condition or reason in your own words.' },
   ],
   photo_guidance: ['Use good lighting and a plain background.', 'Hold the camera steady to avoid blur.'],
+  schemaVersion: 0,
   generated: false,
 };
 
 /**
+ * Persist the resolved form to the Item so it is the durable source of truth.
+ * Never throws — a persistence failure must not break the (already-served) form.
+ */
+const _persistFormToItem = async (itemId, { status, schema, source }) => {
+  try {
+    if (!mongoose.isValidObjectId(itemId)) return;
+    await Item.findByIdAndUpdate(itemId, {
+      $set: {
+        'evidenceForm.status': status,
+        'evidenceForm.schema': schema || null,
+        'evidenceForm.schemaVersion': (schema && schema.schemaVersion) || null,
+        'evidenceForm.source': source || null,
+        'evidenceForm.provider': 'gemini',
+        'evidenceForm.generatedAt': new Date(),
+      },
+    });
+  } catch (err) {
+    console.warn(`[grading] could not persist form to item ${itemId}: ${err.message}`);
+  }
+};
+
+/**
  * Kick off Pass 1 form generation for an item (fire-and-forget).
- * Stores readiness state so the frontend can poll getForm.
+ * Stores readiness state (cache + Item) so the frontend can poll getForm.
  */
 const startFormGeneration = async (itemId, { productId, reason, category, initialPhotos }) => {
   _formState.set(itemId, { status: 'pending', schema: null });
+
+  // Load the catalog product so Pass 1 can tailor the form to THIS specific product
+  // — its real title/brand/description AND its catalog photos (what it looks like
+  // new) — instead of generic category-level reasoning. Without this the LLM only
+  // ever saw `Product listing data: {}` and 0 images.
+  let listingData = {};
+  let listingImageUrls = [];
+  if (productId && mongoose.Types.ObjectId.isValid(productId)) {
+    try {
+      const Product = require('../products/product.model');
+      const product = await Product.findById(productId)
+        .select('title description category brandName condition price images')
+        .lean();
+      if (product) {
+        listingData = {
+          title: product.title,
+          description: product.description,
+          category: product.category,
+          brandName: product.brandName,
+          condition: product.condition,
+          price: product.price,
+        };
+        listingImageUrls = Array.isArray(product.images) ? product.images.slice(0, 4) : [];
+      }
+    } catch (err) {
+      console.warn(`[grading] could not load product ${productId} for Pass 1: ${err.message}`);
+    }
+  }
+
   await ItemLogger.log(itemId, 'PASS1_START',
     `📝 Pass 1 form generation requested (category=${category || 'unknown'}, ` +
-    `${(initialPhotos || []).length} initial photo(s))`,
-    { phase: 'pass1', endpoint: `${ML_SERVICE_URL}/grade/form` });
+    `${(initialPhotos || []).length} clarifying photo(s), ` +
+    `${listingImageUrls.length} catalog reference photo(s), ` +
+    `listing data ${Object.keys(listingData).length ? 'loaded' : 'unavailable'})`,
+    { phase: 'pass1', endpoint: `${ML_SERVICE_URL}/grade/form`,
+      catalogReferenceCount: listingImageUrls.length,
+      hasListingData: Object.keys(listingData).length > 0 });
   try {
     const startedAt = Date.now();
     const resp = await axios.post(`${ML_SERVICE_URL}/grade/form`, {
@@ -535,7 +609,8 @@ const startFormGeneration = async (itemId, { productId, reason, category, initia
       reason,
       category,
       initial_photos: initialPhotos || [],
-      listing_data: {},
+      listing_image_urls: listingImageUrls,
+      listing_data: listingData,
     }, { timeout: ML_TIMEOUT_MS });
     const ms = Date.now() - startedAt;
 
@@ -544,19 +619,24 @@ const startFormGeneration = async (itemId, { productId, reason, category, initia
       await ItemLogger.ingestTrace(itemId, resp.data.trace, { source: 'ml' });
     }
 
-    const schema = resp.data.schema || resp.data;
+    const schema = resp.data.schema || resp.data.form_schema || resp.data;
+    const mlStatus = resp.data?.status || 'ready';
     const fieldCount = Array.isArray(schema?.fields) ? schema.fields.length : 0;
-    _formState.set(itemId, { status: 'ready', schema });
+    // A generated/cached schema is 'ready'; a generic_default is 'fallback'.
+    const readiness = mlStatus === 'generic_default' || mlStatus === 'cache_degraded' ? 'fallback' : 'ready';
+    _formState.set(itemId, { status: readiness, schema, source: mlStatus });
+    await _persistFormToItem(itemId, { status: readiness, schema, source: mlStatus });
     await ItemLogger.log(itemId, 'PASS1_COMPLETE',
-      `✅ Pass 1 form ready in ${ms}ms (status=${resp.data?.status || 'ready'}, ${fieldCount} field(s))`,
-      { phase: 'pass1', level: 'success', durationMs: ms, status: resp.data?.status, fieldCount });
+      `✅ Pass 1 form ready in ${ms}ms (status=${mlStatus}, ${fieldCount} field(s))`,
+      { phase: 'pass1', level: 'success', durationMs: ms, status: mlStatus, fieldCount });
   } catch (err) {
-    // Pass 1 failed irrecoverably -> serve generic default as ready (Req 4.5).
+    // Pass 1 failed irrecoverably -> serve last-resort default as ready (Req 4.5).
     const errTrace = err.response?.data?.detail?.trace || err.response?.data?.trace;
     if (Array.isArray(errTrace) && errTrace.length > 0) {
       await ItemLogger.ingestTrace(itemId, errTrace, { source: 'ml' });
     }
-    _formState.set(itemId, { status: 'ready', schema: GENERIC_FORM_FIELDS });
+    _formState.set(itemId, { status: 'fallback', schema: LAST_RESORT_FORM, source: 'last_resort' });
+    await _persistFormToItem(itemId, { status: 'fallback', schema: LAST_RESORT_FORM, source: 'last_resort' });
     await ItemLogger.log(itemId, 'PASS1_FALLBACK',
       `⚠️ Pass 1 form generation failed (${err.code || err.response?.status || err.message}). ` +
       'Serving the generic default form so the user is never blocked.',
@@ -566,15 +646,62 @@ const startFormGeneration = async (itemId, { productId, reason, category, initia
 
 /**
  * Return the current form for an item.
- * Before Pass 1 completes -> generic fields + status 'pending' (Req 4.1).
- * After Pass 1 completes -> AI Form_Schema + status 'ready' (Req 4.2/4.4).
+ * Reads the in-memory cache first; falls back to the persisted Item form so the
+ * schema survives restarts (improvement #4). Before Pass 1 completes -> last-resort
+ * generic + status 'pending'.
  */
-const getForm = (itemId) => {
+const getForm = async (itemId) => {
+  // Fast path: in-memory cache.
   const state = _formState.get(itemId);
-  if (!state || state.status === 'pending') {
-    return { readiness: 'pending', schema: GENERIC_FORM_FIELDS };
+  if (state && state.status !== 'pending') {
+    return { readiness: state.status, schema: state.schema || LAST_RESORT_FORM, source: state.source };
   }
-  return { readiness: 'ready', schema: state.schema || GENERIC_FORM_FIELDS };
+
+  // Durable path: read from the Item (survives restarts / other instances).
+  try {
+    if (mongoose.isValidObjectId(itemId)) {
+      const item = await Item.findById(itemId).select('evidenceForm').lean();
+      const ef = item && item.evidenceForm;
+      if (ef && ef.status && ef.status !== 'none' && ef.status !== 'pending' && ef.schema) {
+        // Warm the cache for subsequent polls.
+        _formState.set(itemId, { status: ef.status, schema: ef.schema, source: ef.source });
+        return { readiness: ef.status, schema: ef.schema, source: ef.source };
+      }
+      if (ef && ef.status === 'pending') {
+        return { readiness: 'pending', schema: LAST_RESORT_FORM };
+      }
+    }
+  } catch (err) {
+    console.warn(`[grading] getForm read failed for ${itemId}: ${err.message}`);
+  }
+
+  return { readiness: (state && state.status) || 'pending', schema: LAST_RESORT_FORM };
+};
+
+/**
+ * Proxy a single-photo validation to the ML service (v3.44, improvement #2).
+ * Used by the evidence form to give inline "right part? in focus?" feedback,
+ * passing the form field's expected_subject through to CLIP subject match.
+ * Never throws — returns a permissive result if the ML service is unreachable.
+ */
+const validatePhoto = async ({ photoUrl, itemId, expectedSubject }) => {
+  try {
+    const resp = await axios.post(`${ML_SERVICE_URL}/vision/validate-photo`, {
+      photo_url: photoUrl,
+      item_id: itemId,
+      expected_subject: expectedSubject || undefined,
+    }, { timeout: 15000 });
+    return resp.data;
+  } catch (err) {
+    // Don't block the user on a validation outage — treat as "couldn't check".
+    return {
+      photo_url: photoUrl,
+      is_valid: true,
+      issues: [],
+      validation_unavailable: true,
+      reason: err.code || err.message,
+    };
+  }
 };
 
 /**
@@ -597,4 +724,5 @@ module.exports = {
   checkMlHealth,
   startFormGeneration,
   getForm,
+  validatePhoto,
 };

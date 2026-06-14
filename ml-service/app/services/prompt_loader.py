@@ -61,15 +61,27 @@ def load_template(name: str) -> str:
         raise PromptError(f"Template {name} unavailable: {exc}") from exc
 
 
-def compose(category: Optional[str], body: str) -> str:
+def compose(category: Optional[str], body: str, seller_prompt: Optional[str] = None) -> str:
     """
-    Compose base prompt + optional category overlay + the task-specific body.
-    The category overlay is positioned AFTER the base prompt (Req 13.2).
+    Compose base prompt + optional category overlay + optional seller-custom
+    overlay + the task-specific body.
+
+    Layering order (v3.44, improvement #10 — reserves the seller-custom slot from
+    the Phase 2 TODO "Base Prompt, Category Prompt, Custom Prompt"):
+        base  →  category overlay  →  seller-custom overlay  →  task body
+
+    The seller overlay is positioned AFTER the category overlay so a seller can
+    refine — but not silently override — the platform's category rules. It is an
+    opt-in string supplied by the caller (not built in v3.44; the slot exists so
+    wiring it later is a one-line change at the call site).
     """
     base = load_base_prompt()
     overlay = load_category_prompt(category)
     parts = [base]
     if overlay:
         parts.append(overlay)
+    if seller_prompt and seller_prompt.strip():
+        parts.append("SELLER-SPECIFIC INSPECTION NOTES (advisory; never override the rubric above):\n"
+                     + seller_prompt.strip())
     parts.append(body)
     return "\n\n".join(parts)

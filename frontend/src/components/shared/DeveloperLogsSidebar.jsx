@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { getItemLogs } from '../../services/item.service';
 import {
   Terminal, ChevronRight, ChevronLeft, Search, Copy, Download,
   AlertTriangle, CheckCircle2, XCircle, Loader2, Server, Cpu, BookOpen,
-  Activity, ArrowDownToLine, Check,
+  Activity, ArrowDownToLine, Check, Info,
 } from 'lucide-react';
 
 /* ----------------------------------------------------------------------------
@@ -86,15 +87,16 @@ const PHASE_TO_MACRO = {
 const HEALTHY_CYCLE = [
   { phase: 'init', emoji: '🚀', t: 'Return initiated by user', d: 'Item record created; intake path + reason captured.' },
   { phase: 'trust', emoji: '✅', t: 'Trust tier resolved', d: 'e.g. STANDARD — gates how strict the flow is.' },
-  { phase: 'pass1', emoji: '📝', t: 'Pass 1 form requested', d: 'Bedrock generates a tailored evidence form (or cache hit).' },
-  { phase: 'pass1', emoji: '🤖', t: 'Bedrock Pass 1 responds', d: 'Model returns a form schema; cached for reuse.' },
-  { phase: 'evidence', emoji: '📤', t: 'Evidence submitted', d: 'User uploads N photos to S3; status → EVIDENCE_PENDING.' },
-  { phase: 'request', emoji: '📡', t: 'Grading request sent to ML', d: 'POST /grade/ with evidence + listing reference photos.' },
+  { phase: 'pass1', emoji: '📝', t: 'Pass 1 form requested', d: 'Gemini generates a product- & claim-specific evidence form (or cache hit). Status → AWAITING_EVIDENCE.' },
+  { phase: 'pass1', emoji: '🤖', t: 'Gemini Pass 1 responds', d: 'Model returns a tailored form schema (with expected_subject per photo); cached for reuse.' },
+  { phase: 'evidence', emoji: '📤', t: 'Targeted evidence submitted', d: 'User fills the dynamic form; photos map field→image; status → EVIDENCE_PENDING.' },
+  { phase: 'request', emoji: '📡', t: 'Grading request sent to ML', d: 'POST /grade/ with evidence + listing reference + field_images.' },
   { phase: 'request', emoji: '📥', t: 'Images fetched from S3', d: 'Each photo downloaded; size + type logged (no 403/404).' },
   { phase: 'fraud', emoji: '🛡️', t: 'Fraud preflight CLEAN', d: 'phash / EXIF / Rekognition show no hard signal.' },
+  { phase: 'analysis', emoji: '🗂️', t: 'Evidence mapped to named fields', d: 'Pass 2 can grade by field (e.g. sole_photo) not "image 3".' },
   { phase: 'analysis', emoji: '🔬', t: 'Parallel analysis fan-out', d: 'OpenCV, CLIP, Rekognition, Textract run concurrently.' },
   { phase: 'analysis', emoji: '🏷️', t: 'Each analysis returns', d: 'Colour delta, similarity %, labels, OCR lines logged.' },
-  { phase: 'pass2', emoji: '🤖', t: 'Bedrock Pass 2 synthesizes', d: 'Text summary → Nova Pro returns canonical Grade JSON.' },
+  { phase: 'pass2', emoji: '🤖', t: 'Gemini Pass 2 synthesizes', d: 'Text summary → Gemini returns canonical Grade JSON.' },
   { phase: 'pass2', emoji: '🎯', t: 'Grade synthesized', d: 'e.g. Grade B, 78/100, confidence high, routing resell.' },
   { phase: 'persist', emoji: '💾', t: 'Grade persisted to MongoDB', d: 'Evidence bundle + prompts + analysis stored.' },
   { phase: 'persist', emoji: '⛓️', t: 'Lifecycle GRADED emitted', d: 'Tamper-evident event appended (Health Card chain).' },
@@ -124,6 +126,203 @@ function latencyChipColor(ms) {
 function fmtTime(ts) {
   try { return new Date(ts).toLocaleTimeString([], { hour12: false }); }
   catch { return ''; }
+}
+
+// --- AI tool glossary ------------------------------------------------------
+// Each entry: { what } = one-sentence definition, { use } = plain-English
+// description of what it does in *this* pipeline. `match` is the list of
+// case-insensitive terms (whole-word) that should become hoverable.
+const TOOL_GLOSSARY = [
+  {
+    key: 'opencv',
+    label: 'OpenCV',
+    match: ['opencv'],
+    what: 'An open-source computer-vision library for analysing and comparing images.',
+    use: 'Here it measures the colour and histogram difference between the photos you submit and the original listing photos, so a wildly different-looking item gets flagged.',
+  },
+  {
+    key: 'clip',
+    label: 'CLIP',
+    match: ['clip'],
+    what: "A neural model that turns images into vectors so two pictures can be scored for how visually similar they are.",
+    use: 'Here it gives a similarity percentage between your evidence photos and the listing reference, confirming you sent back the same product.',
+  },
+  {
+    key: 'rekognition',
+    label: 'Rekognition',
+    match: ['rekognition'],
+    what: "AWS's image-recognition service that detects objects, labels, and defects in a photo.",
+    use: 'Here it tags what is in each photo and surfaces possible damage (scratches, tears) as defect candidates for the grader to weigh.',
+  },
+  {
+    key: 'textract',
+    label: 'Textract',
+    match: ['textract'],
+    what: "AWS's OCR service that extracts printed text from images.",
+    use: 'Here it reads serial numbers, model codes, and labels off the photos to help verify the item is genuine and matches the listing.',
+  },
+  {
+    key: 'bedrock',
+    label: 'Bedrock',
+    match: ['bedrock'],
+    what: "AWS's managed service for calling large foundation models (LLMs) through one API.",
+    use: 'Here it runs the two reasoning passes — generating the evidence form (Pass 1) and synthesizing the final grade (Pass 2).',
+  },
+  {
+    key: 'gemini',
+    label: 'Gemini',
+    match: ['gemini'],
+    what: "Google's family of multimodal large language models that understand both text and images.",
+    use: 'Here it builds the tailored evidence form and, after seeing the analysis results, decides the final grade and routing.',
+  },
+  {
+    key: 'nova',
+    label: 'Nova',
+    match: ['nova-pro', 'nova'],
+    what: "Amazon's multimodal foundation model family available through Bedrock.",
+    use: 'Here it is the default model invoked for the Pass 1 form and Pass 2 grading reasoning.',
+  },
+  {
+    key: 'claude',
+    label: 'Claude',
+    match: ['claude'],
+    what: "Anthropic's family of large language models, accessible via Bedrock.",
+    use: 'Here it acts as the fallback grading model when the primary model is unavailable.',
+  },
+  {
+    key: 'phash',
+    label: 'pHash',
+    match: ['phash', 'p-hash'],
+    what: 'A perceptual hash that produces a fingerprint of an image so near-identical pictures can be matched.',
+    use: 'Here it spots reused or stock photos during fraud preflight by comparing image fingerprints.',
+  },
+  {
+    key: 'exif',
+    label: 'EXIF',
+    match: ['exif'],
+    what: 'Metadata embedded in a photo file, such as camera, timestamp, and edit history.',
+    use: 'Here it is inspected during fraud preflight for signs a photo was edited or is not an original capture.',
+  },
+  {
+    key: 's3',
+    label: 'S3',
+    match: ['s3'],
+    what: "AWS's object storage service for files like images.",
+    use: 'Here it stores every evidence and listing photo; the ML service fetches them by presigned URL before analysis.',
+  },
+];
+
+// Build a single regex that matches any glossary term as a whole word, and a
+// lookup from a matched (lower-cased) term back to its glossary entry.
+const { GLOSSARY_REGEX, TERM_TO_ENTRY } = (() => {
+  const termMap = {};
+  const terms = [];
+  for (const entry of TOOL_GLOSSARY) {
+    for (const term of entry.match) {
+      termMap[term.toLowerCase()] = entry;
+      terms.push(term);
+    }
+  }
+  // Longer terms first so e.g. "nova-pro" wins over "nova".
+  terms.sort((a, b) => b.length - a.length);
+  const escaped = terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  // \b doesn't play nicely with a trailing digit-less term next to punctuation,
+  // so we bound with non-word lookarounds that still allow hyphens inside terms.
+  const regex = new RegExp(`(?<![\\w-])(${escaped.join('|')})(?![\\w-])`, 'gi');
+  return { GLOSSARY_REGEX: regex, TERM_TO_ENTRY: termMap };
+})();
+
+// --- Glossary tooltip (portal so it escapes the scroll container) ----------
+function GlossaryTooltip({ entry, anchorRect, onClose }) {
+  const tipRef = useRef(null);
+  const [pos, setPos] = useState({ top: -9999, left: -9999 });
+
+  useLayoutEffect(() => {
+    const tip = tipRef.current;
+    if (!tip || !anchorRect) return;
+    const margin = 8;
+    const width = tip.offsetWidth;
+    const height = tip.offsetHeight;
+    let left = anchorRect.left + anchorRect.width / 2 - width / 2;
+    left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
+    // Prefer above the term; flip below if there isn't room.
+    let top = anchorRect.top - height - 8;
+    if (top < margin) top = anchorRect.bottom + 8;
+    setPos({ top, left });
+  }, [anchorRect]);
+
+  return createPortal(
+    <div
+      ref={tipRef}
+      role="tooltip"
+      onMouseEnter={(e) => e.stopPropagation()}
+      style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}
+      className="w-72 max-w-[80vw] bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl p-3 text-[11px] leading-snug pointer-events-none"
+    >
+      <div className="flex items-center gap-1.5 mb-1">
+        <Info className="w-3 h-3 text-[#FF9900] flex-shrink-0" />
+        <span className="font-bold text-zinc-100">{entry.label}</span>
+      </div>
+      <div className="text-zinc-300">{entry.what}</div>
+      <div className="text-zinc-400 mt-1.5 pt-1.5 border-t border-zinc-800">{entry.use}</div>
+    </div>,
+    document.body
+  );
+}
+
+// A single hoverable glossary term.
+function GlossaryTerm({ entry, children }) {
+  const [rect, setRect] = useState(null);
+  const ref = useRef(null);
+
+  const show = useCallback(() => {
+    if (ref.current) setRect(ref.current.getBoundingClientRect());
+  }, []);
+  const hide = useCallback(() => setRect(null), []);
+
+  return (
+    <>
+      <span
+        ref={ref}
+        tabIndex={0}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+        className="underline decoration-dotted decoration-[#FF9900]/70 underline-offset-2 cursor-help text-inherit"
+      >
+        {children}
+      </span>
+      {rect && <GlossaryTooltip entry={entry} anchorRect={rect} onClose={hide} />}
+    </>
+  );
+}
+
+/**
+ * Render a plain string, wrapping any AI-tool mentions in hoverable
+ * GlossaryTerm spans. Returns an array of strings + elements safe for JSX.
+ */
+function withGlossary(text) {
+  if (!text || typeof text !== 'string') return text;
+  GLOSSARY_REGEX.lastIndex = 0;
+  const out = [];
+  let last = 0;
+  let m;
+  let i = 0;
+  while ((m = GLOSSARY_REGEX.exec(text)) !== null) {
+    const entry = TERM_TO_ENTRY[m[0].toLowerCase()];
+    if (!entry) continue;
+    if (m.index > last) out.push(text.slice(last, m.index));
+    out.push(
+      <GlossaryTerm key={`g-${i++}-${m.index}`} entry={entry}>
+        {m[0]}
+      </GlossaryTerm>
+    );
+    last = m.index + m[0].length;
+  }
+  if (last === 0) return text; // no matches — return the raw string
+  if (last < text.length) out.push(text.slice(last));
+  return out;
 }
 
 // --- Metadata block --------------------------------------------------------
@@ -205,7 +404,7 @@ function LogRow({ log, showPhaseDivider }) {
               </span>
             )}
           </div>
-          <div className="text-zinc-300 mt-0.5 break-words whitespace-pre-wrap leading-snug">{log.message}</div>
+          <div className="text-zinc-300 mt-0.5 break-words whitespace-pre-wrap leading-snug">{withGlossary(log.message)}</div>
           <MetaBlock metadata={log.metadata} level={level} />
           <div className="text-zinc-600 text-[9px] mt-0.5">{fmtTime(log.timestamp)}</div>
         </div>
@@ -355,9 +554,9 @@ function ReferencePanel() {
                 <span className={`text-[8px] font-bold uppercase px-1 rounded bg-zinc-800 ${PHASE_META[step.phase]?.color || 'text-zinc-400'}`}>
                   {PHASE_META[step.phase]?.label || step.phase}
                 </span>
-                <span className="text-zinc-200 font-semibold">{step.t}</span>
+                <span className="text-zinc-200 font-semibold">{withGlossary(step.t)}</span>
               </div>
-              <div className="text-zinc-500 mt-0.5 leading-snug">{step.d}</div>
+              <div className="text-zinc-500 mt-0.5 leading-snug">{withGlossary(step.d)}</div>
             </div>
           </div>
         ))}
@@ -365,7 +564,7 @@ function ReferencePanel() {
       <div className="mt-3 p-2 rounded bg-zinc-900 border border-zinc-800 text-zinc-500 leading-snug">
         <span className="text-amber-300 font-semibold">Red rows</span> in Live mean a step failed — the most common
         culprits are <span className="text-zinc-300">image fetch 403/404</span> (expired S3 URL) and
-        <span className="text-zinc-300"> Bedrock AccessDenied / ValidationException</span> (model not enabled, or
+        <span className="text-zinc-300"> Gemini PERMISSION_DENIED / INVALID_ARGUMENT</span> (API key/model issue, or
         sent without required images). The exact cause now appears inline.
       </div>
     </div>
